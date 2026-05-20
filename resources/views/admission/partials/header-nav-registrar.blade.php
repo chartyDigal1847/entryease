@@ -1,0 +1,3 @@
+<a href="{{ route('registrar.dashboard') }}" class="{{ request()->routeIs('registrar.dashboard') ? 'active' : '' }}"><i class="fa-solid fa-house" aria-hidden="true"></i><span>Dashboard</span></a>
+<a href="{{ route('registrar.applications') }}" class="{{ request()->routeIs('registrar.applications') ? 'active' : '' }}"><i class="fa-solid fa-clipboard-list" aria-hidden="true"></i><span>Review Queue</span></a>
+<a href="{{ route('exam.schedules') }}" class="{{ request()->routeIs('exam.*') ? 'active' : '' }}"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i><span>Exam Schedules</span></a>

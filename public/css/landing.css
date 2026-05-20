@@ -1,0 +1,120 @@
+:root {
+    --burgundy: #722f37;
+    --burgundy-dark: #5a252c;
+    --gold: #6b7280;
+    --gold-light: #e5e7eb;
+    --warm-brown: #3d2817;
+    --parchment: #f4f1e8;
+    --gradient-burgundy: linear-gradient(135deg, #722f37 0%, #8b3a3a 100%);
+    --gradient-gold: linear-gradient(
+        135deg,
+        #4b5563 0%,
+        #9ca3af 50%,
+        #4b5563 100%
+    );
+}
+.landing {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1.5rem;
+    background: linear-gradient(
+        135deg,
+        rgba(114, 47, 55, 0.08) 0%,
+        rgba(107, 114, 128, 0.08) 100%
+    );
+}
+.landing-card {
+    width: 100%;
+    max-width: 980px;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+}
+.landing-head {
+    background: var(--gradient-burgundy);
+    color: var(--gold-light);
+    padding: 2.25rem 2rem;
+    border-bottom: 4px solid var(--gold);
+}
+.landing-title {
+    font-family: Cinzel, serif;
+    font-size: 2.2rem;
+    letter-spacing: 2px;
+    color: var(--gold);
+    margin: 0 0 0.25rem;
+}
+.landing-sub {
+    opacity: 0.9;
+}
+.landing-body {
+    padding: 2.25rem 2rem;
+    color: var(--warm-brown);
+}
+.landing-body h2 {
+    font-family: Cinzel, serif;
+    color: var(--burgundy);
+    margin: 0 0 0.5rem;
+}
+.landing-cta {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 1.5rem;
+}
+.landing-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 1rem 1.6rem;
+    border-radius: 10px;
+    text-decoration: none;
+    font-family: Cinzel, serif;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    transition:
+        transform 0.2s,
+        box-shadow 0.2s;
+}
+.landing-btn.primary {
+    background: var(--gradient-gold);
+    color: var(--warm-brown);
+    box-shadow: 0 10px 30px rgba(107, 114, 128, 0.35);
+}
+.landing-btn.secondary {
+    background: transparent;
+    color: var(--burgundy);
+    border: 2px solid var(--burgundy);
+}
+.landing-btn:hover {
+    transform: translateY(-2px);
+}
+.landing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-top: 2rem;
+}
+.landing-feature {
+    background: rgba(107, 114, 128, 0.06);
+    border: 1px solid rgba(107, 114, 128, 0.18);
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+.landing-feature h4 {
+    font-family: Cinzel, serif;
+    color: var(--burgundy);
+    margin: 0 0 0.35rem;
+}
+@media (max-width: 640px) {
+    .landing-head,
+    .landing-body {
+        padding: 1.5rem;
+    }
+    .landing-title {
+        font-size: 1.7rem;
+    }
+}
