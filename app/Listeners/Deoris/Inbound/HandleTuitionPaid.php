@@ -7,7 +7,6 @@ use App\DTOs\Deoris\DeorisEventEnvelope;
 use App\DTOs\Deoris\Inbound\TuitionPaidData;
 use App\Models\ActivityLog;
 use App\Models\Applicant;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class HandleTuitionPaid implements DeorisInboundEventHandler
@@ -21,23 +20,20 @@ class HandleTuitionPaid implements DeorisInboundEventHandler
     {
         $data = TuitionPaidData::fromArray($envelope->data);
 
-        // Get DEORIS user ID by email
-        $deorisUser = DB::connection('deoris')
-            ->table('users')
-            ->where('email', $data->studentEmail)
+        $applicant = Applicant::query()
+            ->where(function ($q) use ($data) {
+                $q->where('portal_student_email', $data->studentEmail);
+                if ($data->studentExternalId) {
+                    $q->orWhere('deoris_user_id', $data->studentExternalId);
+                }
+            })
+            ->latest()
             ->first();
 
-        if ($deorisUser) {
-            $applicant = Applicant::query()
-                ->where('deoris_user_id', $deorisUser->id)
-                ->latest()
-                ->first();
-
-            if ($applicant) {
-                $applicant->update([
-                    'admin_notes' => trim(($applicant->admin_notes ?? '')."\n[TuitionPaid] Ref: {$data->paymentReference}"),
-                ]);
-            }
+        if ($applicant) {
+            $applicant->update([
+                'admin_notes' => trim(($applicant->admin_notes ?? '')."\n[TuitionPaid] Ref: {$data->paymentReference}"),
+            ]);
         }
 
         ActivityLog::record(

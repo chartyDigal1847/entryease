@@ -8,7 +8,6 @@ use App\Http\Resources\ApplicantResource;
 use App\Models\Applicant;
 use App\Models\ActivityLog;
 use App\Services\Admission\AdmissionEventService;
-use App\Services\DeorisUserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -30,7 +29,6 @@ class ApplicantController extends Controller
 {
     public function __construct(
         private readonly AdmissionEventService $eventService,
-        private readonly DeorisUserService $deorisUserService,
     ) {}
 
     /**
@@ -152,14 +150,6 @@ class ApplicantController extends Controller
             'reviewed_by'      => session('sso_id'),
         ]);
 
-        // Sync DEORIS user admission status
-        if ($applicant->deoris_user_id && in_array($validated['status'], ['Approved', 'Rejected', 'Under Review'], true)) {
-            $this->deorisUserService->updateAdmissionStatusById(
-                (int) $applicant->deoris_user_id,
-                $this->admissionStatusFor($validated['status'])
-            );
-        }
-
         $this->eventService->statusChanged(
             $applicant->fresh(),
             $previousStatus,
@@ -222,7 +212,9 @@ class ApplicantController extends Controller
         ]);
 
         $applicant = Applicant::create([
-            'deoris_user_id'   => $deorisUserId,
+            'deoris_user_id'       => $deorisUserId,
+            'portal_student_email' => session('sso_email'),
+            'portal_student_name'  => session('sso_name'),
             'grade_level'      => $validated['grade_level'],
             'additional_info'  => json_encode([
                 'phone'           => $validated['phone'],

@@ -2,38 +2,42 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\StreamsApplicantDocuments;
 use App\Models\Applicant;
 use App\Models\ExamScore;
 use App\Models\ExamSchedule;
+use App\Services\Integration\PortalIdentityApiClient;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 
 class AdminController extends Controller
 {
-    /**
-     * Get SSO user context from session.
-     * Used by all views as $userContext.
-     */
+    use StreamsApplicantDocuments;
+
+    public function __construct(
+        private readonly PortalIdentityApiClient $portalIdentity,
+    ) {}
+
     private function userContext(): array
     {
         return [
-            'id'    => session('sso_id'),
-            'name'  => session('sso_name', 'Admin'),
+            'id' => session('sso_id'),
+            'name' => session('sso_name', 'Admin'),
             'email' => session('sso_email', ''),
-            'role'  => session('sso_role', 'admin'),
+            'role' => session('sso_role', 'admin'),
         ];
     }
 
-    private function userEmail(Request $request): ?string
+    private function actingPortalUserId(): string
     {
-        $email = session('sso_email') ?? $request->header('X-User-Email');
-        return is_string($email) && $email !== '' ? $email : null;
-    }
+        $id = session('sso_id');
 
-    private function userId(Request $request)
-    {
-        return session('sso_id') ?? $request->header('X-User-ID');
+        if (! $id) {
+            abort(403, 'DEORIS portal session required.');
+        }
+
+        return (string) $id;
     }
 
     // ── Dashboard ─────────────────────────────────────────────────────────────
@@ -41,26 +45,25 @@ class AdminController extends Controller
     public function dashboard()
     {
         $stats = [
-            'total'          => Applicant::count(),
-            'pending'        => Applicant::pending()->count(),
-            'under_review'   => Applicant::underReview()->count(),
-            'approved'       => Applicant::approved()->count(),
-            'rejected'       => Applicant::rejected()->count(),
+            'total' => Applicant::count(),
+            'pending' => Applicant::pending()->count(),
+            'under_review' => Applicant::underReview()->count(),
+            'approved' => Applicant::approved()->count(),
+            'rejected' => Applicant::rejected()->count(),
             'total_students' => Applicant::distinct('deoris_user_id')->count(),
             'exam_schedules' => ExamSchedule::count(),
             'upcoming_exams' => ExamSchedule::upcoming()->count(),
         ];
 
-        $recentActivity = Applicant::with(['student', 'examSchedule', 'examScore'])
-            ->orderBy('created_at', 'desc')
+        $recentActivity = Applicant::orderBy('created_at', 'desc')
             ->limit(10)
             ->get();
 
         $approvalRatio = [
-            'approved'     => $stats['approved'],
-            'rejected'     => $stats['rejected'],
+            'approved' => $stats['approved'],
+            'rejected' => $stats['rejected'],
             'under_review' => $stats['under_review'],
-            'pending'      => $stats['pending'],
+            'pending' => $stats['pending'],
         ];
 
         $scoreStatsRaw = (object) DB::selectOne('
@@ -76,12 +79,12 @@ class AdminController extends Controller
         ');
 
         $scoreStats = [
-            'total'   => (int) ($scoreStatsRaw->total ?? 0),
-            'passed'  => (int) ($scoreStatsRaw->passed ?? 0),
-            'failed'  => (int) ($scoreStatsRaw->failed ?? 0),
+            'total' => (int) ($scoreStatsRaw->total ?? 0),
+            'passed' => (int) ($scoreStatsRaw->passed ?? 0),
+            'failed' => (int) ($scoreStatsRaw->failed ?? 0),
             'average' => $scoreStatsRaw->average !== null ? round($scoreStatsRaw->average, 1) : 0,
             'highest' => $scoreStatsRaw->highest !== null ? round($scoreStatsRaw->highest, 1) : 0,
-            'lowest'  => $scoreStatsRaw->lowest !== null ? round($scoreStatsRaw->lowest, 1) : 0,
+            'lowest' => $scoreStatsRaw->lowest !== null ? round($scoreStatsRaw->lowest, 1) : 0,
         ];
 
         $scoreDistribution = array_fill(0, 10, 0);
@@ -93,7 +96,9 @@ class AdminController extends Controller
 
         foreach ($examScores as $row) {
             $percentage = $row->percentage ?? null;
-            if ($percentage === null) continue;
+            if ($percentage === null) {
+                continue;
+            }
             $bucket = min(9, max(0, (int) floor((float) $percentage / 10)));
             $scoreDistribution[$bucket]++;
         }
@@ -110,16 +115,16 @@ class AdminController extends Controller
 
     public function applications(Request $request)
     {
-        $query = Applicant::with(['student', 'examSchedule', 'examScore'])
+        $query = Applicant::with(['examSchedule', 'examScore'])
             ->orderBy('created_at', 'desc');
 
         if ($request->filled('status')) {
             $status = $request->status;
             $statusMap = [
-                'Pending'      => 'pending',
+                'Pending' => 'pending',
                 'Under Review' => 'under_review',
-                'Approved'     => 'approved',
-                'Rejected'     => 'rejected',
+                'Approved' => 'approved',
+                'Rejected' => 'rejected',
             ];
             $admissionStatus = $statusMap[$status] ?? null;
             $query->where(function ($q) use ($status, $admissionStatus) {
@@ -132,20 +137,14 @@ class AdminController extends Controller
 
         if ($request->filled('search')) {
             $search = $request->search;
-            // Search by phone/school in additional_info OR by student name/email via DEORIS
-            $matchingUserIds = DB::connection('deoris')
-                ->table('users')
-                ->where('name', 'like', "%{$search}%")
-                ->orWhere('email', 'like', "%{$search}%")
-                ->pluck('id');
-
-            $query->where(function ($q) use ($search, $matchingUserIds) {
+            $query->where(function ($q) use ($search) {
                 $q->where('additional_info', 'like', "%{$search}%")
-                  ->orWhereIn('deoris_user_id', $matchingUserIds);
+                    ->orWhere('portal_student_name', 'like', "%{$search}%")
+                    ->orWhere('portal_student_email', 'like', "%{$search}%");
             });
         }
 
-        $applicants  = $query->paginate(15)->withQueryString();
+        $applicants = $query->paginate(15)->withQueryString();
         $userContext = $this->userContext();
 
         return view('admission.admin.applications', compact('applicants', 'userContext'));
@@ -153,7 +152,6 @@ class AdminController extends Controller
 
     public function updateStatus(Request $request, Applicant $applicant)
     {
-        // Admin is monitoring only — only Admission Officers can change status.
         if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
                 'success' => false,
@@ -164,17 +162,17 @@ class AdminController extends Controller
         return back()->with('error', 'Admins have monitoring access only. Only Admission Officers can update application status.');
     }
 
-    // ── Registrar (Admission Officer) management ──────────────────────────────
-    // Users live in DEORIS. These methods proxy to the `deoris` DB connection
-    // so the admin can manage officer accounts without leaving EntryEase.
+    // ── Admission officers (DEORIS portal API) ────────────────────────────────
 
     public function registrars()
     {
-        $registrars = DB::connection('deoris')
-            ->table('users')
-            ->whereIn('role', ['admission_officer', 'registrar', 'hr'])
-            ->orderBy('name')
-            ->get();
+        try {
+            $rows = $this->portalIdentity->listAdmissionOfficers($this->actingPortalUserId());
+            $registrars = collect($rows)->map(fn (array $row) => (object) $row);
+        } catch (\Throwable $e) {
+            Log::error('[EntryEase] Failed to load admission officers from DEORIS', ['error' => $e->getMessage()]);
+            return back()->with('error', 'Could not load admission officers from DEORIS portal.');
+        }
 
         $userContext = $this->userContext();
 
@@ -184,69 +182,53 @@ class AdminController extends Controller
     public function createRegistrar()
     {
         $userContext = $this->userContext();
+
         return view('admission.admin.create-registrar', compact('userContext'));
     }
 
     public function storeRegistrar(Request $request)
     {
         $validated = $request->validate([
-            'name'     => 'required|string|max:255',
-            'email'    => 'required|email|max:255',
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|max:255',
             'password' => 'required|string|min:8|confirmed',
         ]);
 
-        $exists = DB::connection('deoris')
-            ->table('users')
-            ->where('email', $validated['email'])
-            ->exists();
+        try {
+            $this->portalIdentity->createAdmissionOfficer($this->actingPortalUserId(), $validated);
+        } catch (\Throwable $e) {
+            Log::warning('[EntryEase] Create admission officer failed', ['error' => $e->getMessage()]);
 
-        if ($exists) {
-            return back()->withErrors(['email' => 'This email is already registered in DEORIS.'])->withInput();
+            return back()->withErrors(['email' => $e->getMessage()])->withInput();
         }
 
-        DB::connection('deoris')->table('users')->insert([
-            'name'       => $validated['name'],
-            'email'      => $validated['email'],
-            'password'   => bcrypt($validated['password']),
-            'role'       => 'admission_officer',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         return redirect()->route('admin.registrars')
-            ->with('success', 'Admission Officer account created successfully.');
+            ->with('success', 'Admission Officer account created in DEORIS.');
     }
 
     public function editRegistrar(int $user)
     {
-        $registrar = DB::connection('deoris')
-            ->table('users')
-            ->where('id', $user)
-            ->whereIn('role', ['admission_officer', 'registrar', 'hr'])
-            ->first();
+        try {
+            $rows = $this->portalIdentity->listAdmissionOfficers($this->actingPortalUserId());
+            $registrar = collect($rows)->firstWhere('id', $user);
+        } catch (\Throwable $e) {
+            abort(503, 'Could not load officer from DEORIS.');
+        }
 
         abort_if(! $registrar, 404, 'Admission Officer not found.');
 
         $userContext = $this->userContext();
 
         return view('admission.admin.edit-registrar', [
-            'user'        => $registrar,
+            'user' => (object) $registrar,
             'userContext' => $userContext,
         ]);
     }
 
     public function updateRegistrar(Request $request, int $user)
     {
-        $registrar = DB::connection('deoris')
-            ->table('users')
-            ->where('id', $user)
-            ->whereIn('role', ['admission_officer', 'registrar', 'hr'])
-            ->first();
-
-        abort_if(! $registrar, 404, 'Admission Officer not found.');
-
         $rules = [
-            'name'  => 'required|string|max:255',
+            'name' => 'required|string|max:255',
             'email' => 'required|email|max:255',
         ];
 
@@ -256,105 +238,60 @@ class AdminController extends Controller
 
         $validated = $request->validate($rules);
 
-        $emailTaken = DB::connection('deoris')
-            ->table('users')
-            ->where('email', $validated['email'])
-            ->where('id', '!=', $user)
-            ->exists();
-
-        if ($emailTaken) {
-            return back()->withErrors(['email' => 'This email is already in use.'])->withInput();
+        try {
+            $this->portalIdentity->updateAdmissionOfficer($this->actingPortalUserId(), $user, $validated);
+        } catch (\Throwable $e) {
+            return back()->withErrors(['email' => $e->getMessage()])->withInput();
         }
-
-        $data = [
-            'name'       => $validated['name'],
-            'email'      => $validated['email'],
-            'updated_at' => now(),
-        ];
-
-        if ($request->filled('password')) {
-            $data['password'] = bcrypt($validated['password']);
-        }
-
-        DB::connection('deoris')->table('users')->where('id', $user)->update($data);
 
         return redirect()->route('admin.registrars')
-            ->with('success', 'Admission Officer updated successfully.');
+            ->with('success', 'Admission Officer updated in DEORIS.');
     }
 
     public function deleteRegistrar(int $user)
     {
-        $registrar = DB::connection('deoris')
-            ->table('users')
-            ->where('id', $user)
-            ->whereIn('role', ['admission_officer', 'registrar', 'hr'])
-            ->first();
-
-        abort_if(! $registrar, 404, 'Admission Officer not found.');
-
-        DB::connection('deoris')->table('users')->where('id', $user)->delete();
+        try {
+            $this->portalIdentity->deleteAdmissionOfficer($this->actingPortalUserId(), $user);
+        } catch (\Throwable $e) {
+            return back()->with('error', $e->getMessage());
+        }
 
         return redirect()->route('admin.registrars')
-            ->with('success', 'Admission Officer account deleted.');
+            ->with('success', 'Admission Officer removed from DEORIS.');
     }
 
     // ── Document management ───────────────────────────────────────────────────
 
     public function viewStudentDocuments(Applicant $applicant)
     {
-        $applicant->load(['student', 'examSchedule', 'examScore']);
+        $applicant->load(['examSchedule', 'examScore']);
         $userContext = $this->userContext();
+
         return view('admission.admin.student-documents', compact('applicant', 'userContext'));
     }
 
     public function downloadStudentDocument(Applicant $applicant, $documentType)
     {
-        if (! in_array($documentType, ['photo_2x2', 'psa_birth_cert'])) {
-            return back()->with('error', 'Invalid document type.');
-        }
-
-        $filePath = $applicant->{$documentType};
-
-        if (! $filePath || ! Storage::disk('private')->exists($filePath)) {
-            return back()->with('error', 'File not found.');
-        }
-
-        return Storage::disk('private')->download($filePath);
+        return $this->downloadApplicantDocument($applicant, $documentType);
     }
 
     public function previewStudentDocument(Applicant $applicant, $documentType)
     {
-        if (! in_array($documentType, ['photo_2x2', 'psa_birth_cert'])) {
-            abort(400, 'Invalid document type.');
-        }
-
-        $filePath = $applicant->{$documentType};
-
-        if (! $filePath || ! Storage::disk('private')->exists($filePath)) {
-            abort(404, 'File not found on server.');
-        }
-
-        $mimeType = Storage::disk('private')->mimeType($filePath);
-
-        return response(Storage::disk('private')->get($filePath), 200, [
-            'Content-Type'        => $mimeType,
-            'Content-Disposition' => 'inline; filename="' . basename($filePath) . '"',
-        ]);
+        return $this->previewApplicantDocument($applicant, $documentType);
     }
 
     // ── API endpoints used by admin.js ────────────────────────────────────────
 
     public function getApplicants()
     {
-        $applicants = Applicant::with(['examSchedule', 'examScore'])
-            ->orderBy('created_at', 'desc')
+        $applicants = Applicant::orderBy('created_at', 'desc')
             ->get()
-            ->map(fn($a) => [
-                'id'           => $a->id,
+            ->map(fn ($a) => [
+                'id' => $a->id,
                 'deoris_user_id' => $a->deoris_user_id,
-                'grade_level'  => $a->grade_level,
-                'status'       => $a->status,
-                'admin_notes'  => $a->admin_notes,
+                'grade_level' => $a->grade_level,
+                'status' => $a->status,
+                'admin_notes' => $a->admin_notes,
                 'submitted_at' => $a->created_at->format('Y-m-d H:i'),
             ]);
 
@@ -364,11 +301,11 @@ class AdminController extends Controller
     public function getApplicant(Applicant $applicant)
     {
         return response()->json([
-            'id'              => $applicant->id,
-            'status'          => $applicant->status,
-            'admin_notes'     => $applicant->admin_notes,
-            'deoris_user_id'  => $applicant->deoris_user_id,
-            'grade_level'     => $applicant->grade_level,
+            'id' => $applicant->id,
+            'status' => $applicant->status,
+            'admin_notes' => $applicant->admin_notes,
+            'deoris_user_id' => $applicant->deoris_user_id,
+            'grade_level' => $applicant->grade_level,
             'additional_info' => json_decode($applicant->additional_info, true),
         ]);
     }

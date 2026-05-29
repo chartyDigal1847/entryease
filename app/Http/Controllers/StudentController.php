@@ -146,7 +146,9 @@ class StudentController extends Controller
 
         // Create the application with documents stored on applicant record
         $applicant = Applicant::create([
-            'deoris_user_id'   => $deorisUserId,
+            'deoris_user_id'        => $deorisUserId,
+            'portal_student_email'  => session('sso_email'),
+            'portal_student_name'   => session('sso_name'),
             'grade_level'      => 'Grade 7',
             'additional_info'  => json_encode([
                 'phone' => $validated['phone'],

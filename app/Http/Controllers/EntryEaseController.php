@@ -6,13 +6,70 @@ use App\Models\ActivityLog;
 use App\Models\Applicant;
 use App\Models\ExamScore;
 use App\Models\ExamSchedule;
-use App\Services\DeorisUserService;
+use App\Services\Admission\AdmissionEventService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class EntryEaseController extends Controller
 {
+    public function ssoExchange(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'token'    => 'required|string|max:500',
+            'embedded' => 'sometimes|boolean',
+        ]);
+
+        $portalUrl = rtrim((string) config('app.portal_url', 'https://deoris.test'), '/');
+        $response = Http::withHeaders([
+            'Accept'        => 'application/json',
+            'Authorization' => 'Bearer ' . $validated['token'],
+        ])->post($portalUrl . '/api/v1/sso/exchange', [
+            'token' => $validated['token'],
+        ]);
+
+        if (! $response->ok()) {
+            return response()->json(['success' => false, 'message' => 'Invalid SSO token'], 401);
+        }
+
+        $payload = $response->json();
+        $user = $payload['user'] ?? $payload['data']['user'] ?? null;
+        if (!is_array($user) || empty($user['id'])) {
+            return response()->json(['success' => false, 'message' => 'Invalid SSO response'], 401);
+        }
+
+        $newRole = $this->normalizeRole((string) ($user['role'] ?? 'student'));
+        $name = (string) ($user['name'] ?? '');
+        $email = (string) ($user['email'] ?? '');
+        $id = (string) $user['id'];
+        $embedded = (bool) ($validated['embedded'] ?? false);
+
+        $request->session()->flush();
+        $request->session()->put([
+            'sso_id'               => $id,
+            'sso_role'             => $newRole,
+            'sso_name'             => $name,
+            'sso_email'            => $email,
+            'sso_embedded'         => $embedded,
+            'user'                 => ['id' => $id, 'role' => $newRole, 'name' => $name, 'email' => $email],
+            'sso_authenticated_at' => now()->timestamp,
+        ]);
+
+        $redirect = match ($newRole) {
+            'admin'             => route('admin.dashboard'),
+            'admission_officer' => route('registrar.dashboard'),
+            default             => route('student.dashboard'),
+        };
+
+        return response()->json([
+            'success'  => true,
+            'redirect' => $redirect,
+            'role'     => $newRole,
+            'user'     => ['id' => $id, 'role' => $newRole, 'name' => $name, 'email' => $email],
+        ]);
+    }
+
     public function index(Request $request)
     {
         // Only flush stale SSO fields if not already authenticated
@@ -197,7 +254,7 @@ class EntryEaseController extends Controller
                 'total_students' => Applicant::distinct('deoris_user_id')->count(),
             ];
 
-            $applications = Applicant::with(['student', 'examSchedule', 'examScore'])
+            $applications = Applicant::with(['examSchedule', 'examScore'])
                 ->orderBy('created_at', 'desc')
                 ->paginate(10);
 
@@ -239,7 +296,7 @@ class EntryEaseController extends Controller
                 'upcoming_exams' => ExamSchedule::upcoming()->count(),
             ];
 
-            $recentActivity = Applicant::with(['student', 'examSchedule', 'examScore'])
+            $recentActivity = Applicant::with(['examSchedule', 'examScore'])
                 ->orderBy('created_at', 'desc')
                 ->limit(10)
                 ->get();
@@ -325,10 +382,10 @@ class EntryEaseController extends Controller
         $role = $this->getRole($request);
         return response()->json([
             'role'        => $role,
-            'applicants'  => Applicant::with('student')->orderByDesc('created_at')->get()->map(fn($a) => [
+            'applicants'  => Applicant::orderByDesc('created_at')->get()->map(fn($a) => [
                 'id'            => $a->id,
-                'student_id'    => $a->student_id,
-                'student_name'  => $a->student?->full_name,
+                'student_id'    => $a->deoris_user_id,
+                'student_name'  => $a->student?->name,
                 'student_email' => $a->student?->email,
                 'grade_level'   => $a->grade_level,
                 'status'        => $a->status,
@@ -346,10 +403,10 @@ class EntryEaseController extends Controller
 
     public function listApplicants(Request $request): JsonResponse
     {
-        return response()->json(['applicants' => Applicant::with('student')->orderByDesc('created_at')->get()->map(fn($a) => [
+        return response()->json(['applicants' => Applicant::orderByDesc('created_at')->get()->map(fn($a) => [
             'id'            => $a->id,
-            'student_id'    => $a->student_id,
-            'student_name'  => $a->student?->full_name,
+            'student_id'    => $a->deoris_user_id,
+            'student_name'  => $a->student?->name,
             'student_email' => $a->student?->email,
             'grade_level'   => $a->grade_level,
             'status'        => $a->status,
@@ -363,8 +420,8 @@ class EntryEaseController extends Controller
     {
         return response()->json([
             'id'              => $applicant->id,
-            'student_id'      => $applicant->student_id,
-            'student_name'    => $applicant->student?->full_name,
+            'student_id'      => $applicant->deoris_user_id,
+            'student_name'    => $applicant->student?->name,
             'student_email'   => $applicant->student?->email,
             'grade_level'     => $applicant->grade_level,
             'status'          => $applicant->status,
@@ -415,16 +472,11 @@ class EntryEaseController extends Controller
         if ($oldStatus !== ($validated['status'] ?? $oldStatus)) {
             ActivityLog::record("Applicant {$applicant->id} status changed to {$applicant->status}", 'amber');
 
-            // If we have a linked DEORIS user, update their admission_status
-            if ($applicant->deoris_user_id) {
-                $deorisStatus = $this->admissionStatusFor($applicant->status);
-                app(DeorisUserService::class)->updateAdmissionStatusById($applicant->deoris_user_id, $deorisStatus);
-                Log::info('[Admission] DEORIS admission status synced (EntryEaseController)', [
-                    'applicant_id' => $applicant->id,
-                    'deoris_user_id' => $applicant->deoris_user_id,
-                    'deoris_status' => $deorisStatus,
-                ]);
-            }
+            app(AdmissionEventService::class)->statusChanged(
+                $applicant->fresh(),
+                $oldStatus,
+                (string) session('sso_id'),
+            );
         }
         return response()->json(['message' => 'Applicant updated successfully', 'applicant' => $applicant]);
     }

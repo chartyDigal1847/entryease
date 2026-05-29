@@ -7,7 +7,6 @@ use App\DTOs\Deoris\DeorisEventEnvelope;
 use App\DTOs\Deoris\Inbound\StudentEnrolledData;
 use App\Models\ActivityLog;
 use App\Models\Applicant;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class HandleStudentEnrolled implements DeorisInboundEventHandler
@@ -21,25 +20,28 @@ class HandleStudentEnrolled implements DeorisInboundEventHandler
     {
         $data = StudentEnrolledData::fromArray($envelope->data);
 
-        // Get DEORIS user ID by email
-        $deorisUser = DB::connection('deoris')
-            ->table('users')
-            ->where('email', $data->studentEmail)
-            ->first();
+        $applicant = null;
 
-        if ($deorisUser) {
+        if ($data->studentExternalId) {
             $applicant = Applicant::query()
-                ->where('deoris_user_id', $deorisUser->id)
+                ->where('deoris_user_id', $data->studentExternalId)
                 ->latest()
                 ->first();
+        }
 
-            if ($applicant && $applicant->status !== 'Approved') {
-                $applicant->update([
-                    'status' => 'Approved',
-                    'admission_status' => 'approved',
-                    'admin_notes' => trim(($applicant->admin_notes ?? '')."\n[StudentEnrolled] Ref: {$data->enrollmentReference}"),
-                ]);
-            }
+        if (! $applicant && $data->studentEmail) {
+            $applicant = Applicant::query()
+                ->where('portal_student_email', $data->studentEmail)
+                ->latest()
+                ->first();
+        }
+
+        if ($applicant && $applicant->status !== 'Approved') {
+            $applicant->update([
+                'status' => 'Approved',
+                'admission_status' => 'approved',
+                'admin_notes' => trim(($applicant->admin_notes ?? '')."\n[StudentEnrolled] Ref: {$data->enrollmentReference}"),
+            ]);
         }
 
         ActivityLog::record(

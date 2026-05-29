@@ -7,7 +7,6 @@ use App\DTOs\Deoris\DeorisEventEnvelope;
 use App\DTOs\Deoris\Inbound\MedicalApprovedData;
 use App\Models\ActivityLog;
 use App\Models\Applicant;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class HandleMedicalApproved implements DeorisInboundEventHandler
@@ -21,24 +20,16 @@ class HandleMedicalApproved implements DeorisInboundEventHandler
     {
         $data = MedicalApprovedData::fromArray($envelope->data);
 
-        // Get DEORIS user ID by email
-        $deorisUser = DB::connection('deoris')
-            ->table('users')
-            ->where('email', $data->studentEmail)
+        $applicant = Applicant::query()
+            ->where('portal_student_email', $data->studentEmail)
+            ->latest()
             ->first();
 
-        if ($deorisUser) {
-            $applicant = Applicant::query()
-                ->where('deoris_user_id', $deorisUser->id)
-                ->latest()
-                ->first();
-
-            if ($applicant) {
-                $note = "[MedicalApproved] Ref: {$data->clearanceReference}";
-                $applicant->update([
-                    'admin_notes' => trim(($applicant->admin_notes ?? '')."\n".$note),
-                ]);
-            }
+        if ($applicant) {
+            $note = "[MedicalApproved] Ref: {$data->clearanceReference}";
+            $applicant->update([
+                'admin_notes' => trim(($applicant->admin_notes ?? '')."\n".$note),
+            ]);
         }
 
         ActivityLog::record(

@@ -14,42 +14,29 @@ use App\Events\Deoris\ExamScoreReleased;
 use App\Models\Applicant;
 use App\Models\ExamSchedule;
 use App\Models\ExamScore;
-use App\Services\DeorisUserService;
 use App\Services\Integration\DeorisEventDispatcher;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class AdmissionEventService
 {
     public function __construct(
         private readonly DeorisEventDispatcher $dispatcher,
-        private readonly DeorisUserService $deorisUserService,
     ) {}
 
-    private function getDeorisUserData(?int $deorisUserId): array
+  /**
+     * @return array{email: ?string, name: ?string}
+     */
+    private function getPortalUserData(Applicant $applicant): array
     {
-        if (!$deorisUserId) {
-            return ['email' => null, 'name' => null];
-        }
-
-        try {
-            $user = DB::connection('deoris')
-                ->table('users')
-                ->where('id', $deorisUserId)
-                ->first();
-
-            return [
-                'email' => $user?->email,
-                'name' => $user?->name,
-            ];
-        } catch (\Exception $e) {
-            return ['email' => null, 'name' => null];
-        }
+        return [
+            'email' => $applicant->portal_student_email ?? session('sso_email'),
+            'name' => $applicant->portal_student_name ?? session('sso_name'),
+        ];
     }
 
     public function applicationSubmitted(Applicant $applicant, ?string $correlationId = null): void
     {
-        $userData = $this->getDeorisUserData($applicant->deoris_user_id);
+        $userData = $this->getPortalUserData($applicant);
 
         $data = new ApplicationSubmittedData(
             applicantId: $applicant->id,
@@ -71,7 +58,7 @@ class AdmissionEventService
         ?string $reviewedBy = null,
         ?string $correlationId = null,
     ): void {
-        $userData = $this->getDeorisUserData($applicant->deoris_user_id);
+        $userData = $this->getPortalUserData($applicant);
 
         $data = new ApplicationStatusChangedData(
             applicantId: $applicant->id,
@@ -106,7 +93,7 @@ class AdmissionEventService
 
     public function examAssigned(Applicant $applicant, ExamSchedule $schedule, ?string $correlationId = null): void
     {
-        $userData = $this->getDeorisUserData($applicant->deoris_user_id);
+        $userData = $this->getPortalUserData($applicant);
 
         $data = new ExamEventData(
             applicantId: $applicant->id,
@@ -127,7 +114,7 @@ class AdmissionEventService
             ? round(($score->score / $score->total_items) * 100, 1)
             : null;
 
-        $userData = $this->getDeorisUserData($applicant->deoris_user_id);
+        $userData = $this->getPortalUserData($applicant);
 
         $data = new ExamEventData(
             applicantId: $applicant->id,

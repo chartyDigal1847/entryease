@@ -28,16 +28,22 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\TrackNavigationHistory::class,
         ]);
 
-        // API routes also need session (for SSO session-based auth)
+        // API routes need session for SSO session-based auth
         $middleware->api(append: [
             \Illuminate\Session\Middleware\StartSession::class,
         ]);
+
+        // Pin session cookie config before session starts — prevents XAMPP
+        // cross-vhost contamination from bleeding another module's cookie name/SameSite.
+        $middleware->prependToGroup('web', \App\Http\Middleware\ForceSessionCookies::class);
+        $middleware->prependToGroup('api', \App\Http\Middleware\ForceSessionCookies::class);
 
         $middleware->validateCsrfTokens(except: [
             'entryease/api/events/inbound',
             'api/sso/*',    // SSO endpoints don't use CSRF tokens
             'api/v1/*',     // v1 API uses session auth, not CSRF
             'sso/redirect', // Legacy SSO redirect endpoint
+            'sso/exchange', // Token exchange — CSRF not applicable (token-based)
         ]);
 
         // Content Security Policy — allows portal to embed this module in an iframe

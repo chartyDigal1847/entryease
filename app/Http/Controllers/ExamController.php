@@ -244,10 +244,9 @@ class ExamController extends Controller
             abort(403, 'Only Admission Officers can manage exam schedules.');
         }
 
-        $applicants  = $schedule->applicants()->with(['student', 'examScore'])->get();
+        $applicants  = $schedule->applicants()->with('examScore')->get();
         $unassigned  = Applicant::whereNull('exam_schedule_id')
                                 ->where('status', '!=', 'Rejected')
-                                ->with('student')
                                 ->get();
         $userContext = $this->userContext();
 
@@ -406,7 +405,7 @@ class ExamController extends Controller
     public function scoreAnalytics(ExamSchedule $schedule)
     {
         $scores = ExamScore::where('exam_schedule_id', $schedule->id)
-            ->with(['applicant.student'])
+            ->with('applicant')
             ->get();
 
         $stats = [

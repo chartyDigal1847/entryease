@@ -16,6 +16,7 @@
 
         // How long to wait for the portal's SSO_TOKEN before showing an error
         window.SSO_TIMEOUT_MS = 8000;
+        window.DEORIS_SSO_MODE = "module";
     </script>
 </head>
 <body>
@@ -56,7 +57,7 @@
 </style>
 
 <!-- module-bridge.js MUST load BEFORE your main app script -->
-<script src="https://deoris.test/module-bridge.js"></script>
+<script src="{{ rtrim(config('app.portal_url', 'https://deoris.test'), '/') }}/module-bridge.js"></script>
 <script src="{{ asset('js/entryease.js') }}?v={{ filemtime(public_path('js/entryease.js')) }}"></script>
 
 </body>

@@ -38,6 +38,8 @@ class EnsureSsoAuthenticated
         // SSO token exchange - no session yet
         'api/sso/exchange',
         'api/sso/heartbeat',
+        // Web-route exchange (module mode — token posted directly to web route)
+        'sso/exchange',
         // Initial page load - module-bridge will handle auth
         '/',
         // Deprecated SSO redirect (legacy entryease.js flow)

@@ -25,6 +25,7 @@ Route::get('/logout', [EntryEaseController::class, 'logout'])->name('logout.get'
 //    Legacy Blade handoff after module:ready. Remove when dashboards boot
 //    directly from window.PORTAL_USER.
 Route::post('/sso/redirect', [EntryEaseController::class, 'ssoRedirect'])->name('sso.redirect');
+Route::post('/sso/exchange', [EntryEaseController::class, 'ssoExchange'])->name('sso.exchange');
 
 // ── SSO redirect (GET) — dev/standalone path only (?dev=1&role=...)
 //    Only reached when module-bridge fires in top-level/standalone mode.

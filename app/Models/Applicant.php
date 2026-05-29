@@ -11,6 +11,8 @@ class Applicant extends Model
 
     protected $fillable = [
         'deoris_user_id',
+        'portal_student_email',
+        'portal_student_name',
         'grade_level',
         'additional_info',
         'status',
@@ -31,23 +33,23 @@ class Applicant extends Model
         'documents_updated_at' => 'datetime',
     ];
 
-    // DEORIS user relationship - users are managed in DEORIS only
-    public function deorisUser()
+    public function getStudentEmailAttribute(): ?string
     {
-        // Access DEORIS user via database connection
-        return $this->belongsTo(\App\Models\User::class, 'deoris_user_id', 'id');
+        return $this->portal_student_email;
     }
 
-    // Alias for deorisUser relationship
-    public function student()
+    public function getStudentNameAttribute(): ?string
     {
-        return $this->deorisUser();
+        return $this->portal_student_name;
     }
 
-    // Reviewer is now just a DEORIS user ID (admin/registrar)
-    public function reviewer()
+    /** Legacy view accessor: $applicant->student->email */
+    public function getStudentAttribute(): object
     {
-        return $this->belongsTo(\App\Models\User::class, 'reviewed_by', 'id');
+        return (object) [
+            'email' => $this->portal_student_email,
+            'name' => $this->portal_student_name,
+        ];
     }
 
     public function examSchedule()

@@ -25,70 +25,103 @@ if (window.__ENTRYEASE_LOADED__) {
         if (el) { el.style.display = 'block'; el.textContent = message; }
     }
 
+    function delay(ms) {
+        return new Promise(function (resolve) {
+            window.setTimeout(resolve, ms);
+        });
+    }
+
+    function isRetryableExchangeError(err) {
+        var message = String((err && err.message) || '');
+        return message === 'Failed to fetch' ||
+            message.indexOf('SSO exchange failed: 419') === 0 ||
+            message.indexOf('SSO exchange failed: 429') === 0 ||
+            message.indexOf('SSO exchange failed: 5') === 0;
+    }
+
     function bootFromPortalUser(detail) {
         console.log('[entryease] module:ready received.');
 
-        var user  = (detail && detail.user) || window.PORTAL_USER || {};
-        var role  = user.role  || 'student';
-        var name  = user.name  || '';
-        var email = user.email || '';
-        var id    = user.id    || '';
+        var user = (detail && detail.user) || window.PORTAL_USER || null;
+        var token = (detail && detail.token) || window.SSO_TOKEN || null;
 
-        console.log('[entryease] User role:', role, '— submitting to Laravel.');
+        console.log(user && user.id
+            ? '[entryease] Hydrating module session from portal user.'
+            : '[entryease] Exchanging SSO token with module backend.');
 
         var csrfMeta = document.querySelector('meta[name="csrf-token"]');
         if (!csrfMeta) { showInitError('CSRF token missing.'); return; }
+        if (!token && !(user && user.id)) { showInitError('SSO identity missing.'); return; }
 
-        // Legacy server-rendered handoff. Role comes from the portal identity
-        // event and is clamped server-side. Replace this with direct UI boot
-        // as EntryEase screens move fully to memory-only identity.
-        var form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/sso/redirect';
+        function redirectAfter(json) {
+            if (json && json.redirect) {
+                window.location.href = json.redirect;
+                return;
+            }
+            showInitError('SSO succeeded but no redirect provided.');
+        }
 
-        [
-            { name: '_token',   value: csrfMeta.getAttribute('content') },
-            { name: 'role',     value: role  },
-            { name: 'name',     value: name  },
-            { name: 'email',    value: email },
-            { name: 'id',       value: id    },
-            { name: 'embedded', value: (detail && detail.embedded) ? '1' : '0' },
-        ].forEach(function (f) {
-            var input = document.createElement('input');
-            input.type  = 'hidden';
-            input.name  = f.name;
-            input.value = f.value;
-            form.appendChild(input);
-        });
-
-        document.body.appendChild(form);
-
-        // If embedded, prefer XHR/Fetch POST so we can consume JSON redirect
-        // and update the iframe location without rendering server views.
-        if ((detail && detail.embedded) || (window.PORTAL_USER && window.PORTAL_USER.embedded)) {
-            var fd = new FormData(form);
-            fetch(form.action, {
+        if (user && user.id) {
+            fetch('/sso/redirect', {
                 method: 'POST',
                 credentials: 'same-origin',
-                headers: { 'Accept': 'application/json' },
-                body: fd,
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrfMeta.getAttribute('content'),
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({
+                    id: user.id,
+                    name: user.name || '',
+                    email: user.email || '',
+                    role: user.role || 'student',
+                    embedded: !!(detail && detail.embedded) ? '1' : '0',
+                }),
             }).then(function (res) {
-                if (!res.ok) throw new Error('SSO POST failed: ' + res.status);
+                if (!res.ok) throw new Error('SSO session hydration failed: ' + res.status);
                 return res.json().catch(function () { throw new Error('Invalid JSON response'); });
-            }).then(function (json) {
-                if (json && json.redirect) {
-                    // If running inside a portal iframe, navigate the iframe to the dashboard
-                    window.location.href = json.redirect;
-                    return;
-                }
-                showInitError('SSO succeeded but no redirect provided.');
-            }).catch(function (err) {
-                console.error('[entryease] SSO redirect exchange failed:', err);
-                showInitError('Authentication failed during handoff.');
+            }).then(redirectAfter).catch(function (err) {
+                console.error('[entryease] SSO hydration failed:', err);
+                showInitError('Authentication failed during exchange.');
             });
-        } else {
-            form.submit();
+            return;
         }
+
+        function exchange(attempt) {
+            attempt = attempt || 1;
+
+            return fetch('/sso/exchange', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfMeta.getAttribute('content'),
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            body: JSON.stringify({
+                token: token,
+                embedded: !!(detail && detail.embedded),
+            }),
+            }).then(function (res) {
+                if (!res.ok) throw new Error('SSO exchange failed: ' + res.status);
+                return res.json().catch(function () { throw new Error('Invalid JSON response'); });
+            }).catch(function (err) {
+                if (attempt < 3 && isRetryableExchangeError(err)) {
+                    return delay(250 * attempt).then(function () {
+                        return exchange(attempt + 1);
+                    });
+                }
+
+                throw err;
+            });
+        }
+
+        exchange(1).then(redirectAfter).catch(function (err) {
+            console.error('[entryease] SSO exchange failed:', err);
+            showInitError('Authentication failed during exchange.');
+        });
     }
 
     // "module:ready" is the only boot signal modules should trust. It is

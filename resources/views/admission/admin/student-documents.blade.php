@@ -71,9 +71,18 @@
                     </div>
                     <div class="card-body" style="display:flex;flex-direction:column;gap:.85rem">
                         @if($applicant->photo_2x2)
+                            @php
+                                $photoPreviewVersion = md5($applicant->photo_2x2 . '|' . optional($applicant->documents_updated_at)->timestamp);
+                                $photoPreviewUrl = route('admin.student.document.preview', ['applicant' => $applicant, 'documentType' => 'photo_2x2', 'v' => $photoPreviewVersion]);
+                            @endphp
                             <div style="display:flex;align-items:center;gap:.5rem">
                                 <i class="fa-solid fa-circle-check" style="color:var(--success)"></i>
                                 <span class="status-badge approved">Uploaded</span>
+                            </div>
+                            <div style="border:1px solid var(--border,#e5e7eb);border-radius:8px;overflow:hidden;background:#f8fafc;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center">
+                                <img src="{{ $photoPreviewUrl }}"
+                                     alt="2x2 photo preview"
+                                     style="width:100%;height:100%;object-fit:contain">
                             </div>
                             <div style="font-size:.82rem;color:var(--text-muted);line-height:1.6">
                                 <strong>Format:</strong> {{ strtoupper(pathinfo($applicant->photo_2x2, PATHINFO_EXTENSION)) }}<br>
@@ -86,7 +95,7 @@
                                    class="btn btn-primary btn-sm">
                                     <i class="fa-solid fa-download"></i> Download
                                 </a>
-                                <a href="{{ route('admin.student.document.preview', ['applicant' => $applicant, 'documentType' => 'photo_2x2']) }}"
+                                <a href="{{ $photoPreviewUrl }}"
                                    target="_blank" class="btn btn-secondary btn-sm">
                                     <i class="fa-solid fa-eye"></i> Preview
                                 </a>
@@ -110,9 +119,25 @@
                     </div>
                     <div class="card-body" style="display:flex;flex-direction:column;gap:.85rem">
                         @if($applicant->psa_birth_cert)
+                            @php
+                                $psaPreviewVersion = md5($applicant->psa_birth_cert . '|' . optional($applicant->documents_updated_at)->timestamp);
+                                $psaPreviewUrl = route('admin.student.document.preview', ['applicant' => $applicant, 'documentType' => 'psa_birth_cert', 'v' => $psaPreviewVersion]);
+                                $psaExtension = strtolower(pathinfo($applicant->psa_birth_cert, PATHINFO_EXTENSION));
+                            @endphp
                             <div style="display:flex;align-items:center;gap:.5rem">
                                 <i class="fa-solid fa-circle-check" style="color:var(--success)"></i>
                                 <span class="status-badge approved">Uploaded</span>
+                            </div>
+                            <div style="border:1px solid var(--border,#e5e7eb);border-radius:8px;overflow:hidden;background:#f8fafc;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center">
+                                @if($psaExtension === 'pdf')
+                                    <iframe src="{{ $psaPreviewUrl }}"
+                                            title="PSA birth certificate preview"
+                                            style="width:100%;height:100%;border:0"></iframe>
+                                @else
+                                    <img src="{{ $psaPreviewUrl }}"
+                                         alt="PSA birth certificate preview"
+                                         style="width:100%;height:100%;object-fit:contain">
+                                @endif
                             </div>
                             <div style="font-size:.82rem;color:var(--text-muted);line-height:1.6">
                                 <strong>Format:</strong> {{ strtoupper(pathinfo($applicant->psa_birth_cert, PATHINFO_EXTENSION)) }}<br>
@@ -125,7 +150,7 @@
                                    class="btn btn-primary btn-sm">
                                     <i class="fa-solid fa-download"></i> Download
                                 </a>
-                                <a href="{{ route('admin.student.document.preview', ['applicant' => $applicant, 'documentType' => 'psa_birth_cert']) }}"
+                                <a href="{{ $psaPreviewUrl }}"
                                    target="_blank" class="btn btn-secondary btn-sm">
                                     <i class="fa-solid fa-eye"></i> Preview
                                 </a>

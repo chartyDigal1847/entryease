@@ -2,17 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\StreamsApplicantDocuments;
 use App\Models\Applicant;
 use App\Models\ExamSchedule;
 use Illuminate\Http\Request;
 use App\Services\Admission\AdmissionEventService;
-use App\Services\DeorisUserService;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
 class RegistrarController extends Controller
 {
+    use StreamsApplicantDocuments;
+
     /**
      * Get SSO user context from session.
      */
@@ -54,7 +55,7 @@ class RegistrarController extends Controller
             'total_students' => Applicant::distinct('deoris_user_id')->count(),
         ];
 
-        $applications = Applicant::with(['student', 'examSchedule', 'examScore'])
+        $applications = Applicant::with(['examSchedule', 'examScore'])
             ->orderBy('created_at', 'desc')
             ->paginate(10);
 
@@ -73,7 +74,7 @@ class RegistrarController extends Controller
 
     public function applications(Request $request)
     {
-        $applications = Applicant::with(['student', 'examSchedule', 'examScore'])
+        $applications = Applicant::with(['examSchedule', 'examScore'])
             ->when($request->filled('status'), fn($query) => $query->where('status', $request->status))
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = $request->search;
@@ -90,7 +91,7 @@ class RegistrarController extends Controller
 
     public function viewApplication(Applicant $applicant)
     {
-        $applicant->load(['student', 'examSchedule', 'examScore']);
+        $applicant->load(['examSchedule', 'examScore']);
         $userContext = $this->userContext();
         return view('admission.registrar.view-application', compact('applicant', 'userContext'));
     }
@@ -138,23 +139,6 @@ class RegistrarController extends Controller
                 (string) $this->userId($request),
             );
 
-            // Update DEORIS user admission status for Approved, Rejected, and Under Review
-            if (in_array($validated['status'], ['Approved', 'Rejected', 'Under Review'], true)) {
-                if ($applicant->deoris_user_id) {
-                    $deorisStatus = $this->admissionStatusFor($validated['status']);
-                    app(DeorisUserService::class)->updateAdmissionStatusById(
-                        $applicant->deoris_user_id,
-                        $deorisStatus
-                    );
-
-                    Log::info('[Admission] DEORIS admission status updated', [
-                        'applicant_id' => $applicant->id,
-                        'deoris_user_id' => $applicant->deoris_user_id,
-                        'deoris_status' => $deorisStatus,
-                    ]);
-                }
-            }
-
             return redirect()->route('registrar.applications')->with('success', 'Application status updated successfully.');
         } catch (\Exception $e) {
             Log::error('[Admission] Error updating application status', [
@@ -176,40 +160,11 @@ class RegistrarController extends Controller
 
     public function downloadStudentDocument(Applicant $applicant, $documentType)
     {
-        $allowedTypes = ['photo_2x2', 'psa_birth_cert'];
-
-        if (!in_array($documentType, $allowedTypes)) {
-            return back()->with('error', 'Invalid document type.');
-        }
-
-        $filePath = $applicant->{$documentType};
-
-        if (!$filePath || !Storage::disk('private')->exists($filePath)) {
-            return back()->with('error', 'File not found.');
-        }
-
-        return Storage::disk('private')->download($filePath);
+        return $this->downloadApplicantDocument($applicant, $documentType);
     }
 
     public function previewStudentDocument(Applicant $applicant, $documentType)
     {
-        $allowedTypes = ['photo_2x2', 'psa_birth_cert'];
-
-        if (!in_array($documentType, $allowedTypes)) {
-            abort(400, 'Invalid document type.');
-        }
-
-        $filePath = $applicant->{$documentType};
-
-        if (!$filePath || !Storage::disk('private')->exists($filePath)) {
-            abort(404, 'File not found.');
-        }
-
-        $mimeType = Storage::disk('private')->mimeType($filePath);
-
-        return response(Storage::disk('private')->get($filePath), 200, [
-            'Content-Type'        => $mimeType,
-            'Content-Disposition' => 'inline; filename="' . basename($filePath) . '"',
-        ]);
+        return $this->previewApplicantDocument($applicant, $documentType);
     }
 }
