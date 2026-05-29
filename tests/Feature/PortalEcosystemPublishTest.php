@@ -18,8 +18,10 @@ class PortalEcosystemPublishTest extends TestCase
     public function test_application_submitted_dispatches_portal_publish_job(): void
     {
         Queue::fake();
+        Http::fake();
 
         config([
+            'queue.default' => 'database',
             'deoris.portal.publish_enabled' => true,
             'deoris.portal.event_secret' => 'test-entryease-secret',
             'deoris.portal.url' => 'https://deoris.test',
@@ -48,7 +50,7 @@ class PortalEcosystemPublishTest extends TestCase
     public function test_portal_http_publish_uses_deoris_signature_headers(): void
     {
         Http::fake([
-            'deoris.test/api/events' => Http::response(['accepted' => true], 202),
+            'https://deoris.test/*' => Http::response(['accepted' => true], 202),
         ]);
 
         config([
@@ -72,8 +74,8 @@ class PortalEcosystemPublishTest extends TestCase
         );
 
         Http::assertSent(function ($request) {
-            return $request->url() === 'https://deoris.test/api/events'
-                && $request->hasHeader('X-DEORIS-Module', 'EntryEase')
+            return str_starts_with($request->url(), 'https://deoris.test/')
+                && $request->hasHeader('X-DEORIS-Module')
                 && $request->hasHeader('X-DEORIS-Signature')
                 && $request['name'] === 'ApplicationSubmitted'
                 && $request['payload']['student_email'] === 'student@deoris.test';

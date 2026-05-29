@@ -6,8 +6,9 @@ use App\Models\Applicant;
 use App\Models\ExamQuestion;
 use App\Models\ExamSchedule;
 use App\Models\ExamScore;
-use App\Models\Student;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class EntryEaseWorkflowTest extends TestCase
@@ -16,7 +17,11 @@ class EntryEaseWorkflowTest extends TestCase
 
     public function test_grade_7_exam_workflow_is_database_backed_end_to_end(): void
     {
+        config(['deoris.portal.publish_enabled' => false]);
+        Storage::fake('private');
+
         $studentSession = [
+            'sso_id' => 101,
             'sso_role' => 'student',
             'sso_name' => 'Pat Student',
             'sso_email' => 'pat.student@example.test',
@@ -29,12 +34,15 @@ class EntryEaseWorkflowTest extends TestCase
         ];
 
         $this->withSession($studentSession)
-            ->postJson('/api/student/apply', ['grade_level' => 'Grade 7'])
-            ->assertCreated()
-            ->assertJsonPath('success', true);
+            ->post(route('student.apply.store'), [
+                'phone' => '09170000001',
+                'previous_school' => 'Sample Elementary School',
+                'photo_2x2' => UploadedFile::fake()->create('photo.jpg', 128, 'image/jpeg'),
+                'psa_birth_cert' => UploadedFile::fake()->create('psa.pdf', 128, 'application/pdf'),
+            ])
+            ->assertRedirect(route('student.applications'));
 
-        $student = Student::where('email', 'pat.student@example.test')->firstOrFail();
-        $applicant = Applicant::where('student_id', $student->id)->firstOrFail();
+        $applicant = Applicant::where('deoris_user_id', 101)->firstOrFail();
 
         $this->assertSame('Grade 7', $applicant->grade_level);
         $this->assertSame('pending', $applicant->admission_status);
@@ -53,6 +61,7 @@ class EntryEaseWorkflowTest extends TestCase
                 'start_time' => '09:00',
                 'end_time' => '10:00',
                 'venue' => 'Testing Room 1',
+                'exam_type' => 'online',
                 'batch' => 'Batch A',
                 'slots' => 30,
                 'instructions' => 'Answer all questions.',
@@ -130,13 +139,6 @@ class EntryEaseWorkflowTest extends TestCase
 
     public function test_access_rules_prevent_admin_and_student_score_or_approval_changes(): void
     {
-        $student = Student::create([
-            'full_name' => 'Restricted Student',
-            'email' => 'restricted@example.test',
-            'phone' => 'N/A',
-            'password' => 'password',
-        ]);
-
         $schedule = ExamSchedule::create([
             'title' => 'Grade 7 Entrance Exam - Batch B',
             'exam_date' => now()->addDay()->format('Y-m-d'),
@@ -148,22 +150,30 @@ class EntryEaseWorkflowTest extends TestCase
         ]);
 
         $applicant = Applicant::create([
-            'student_id' => $student->id,
+            'deoris_user_id' => 133,
+            'portal_student_name' => 'Restricted Student',
+            'portal_student_email' => 'restricted@example.test',
             'grade_level' => 'Grade 7',
             'exam_schedule_id' => $schedule->id,
             'status' => 'Pending',
             'admission_status' => 'pending',
         ]);
 
-        $adminSession = ['sso_role' => 'admin', 'sso_name' => 'Admin'];
+        $adminSession = [
+            'sso_id' => 1,
+            'sso_role' => 'admin',
+            'sso_name' => 'Admin',
+            'sso_email' => 'admin@example.test',
+        ];
         $studentSession = [
+            'sso_id' => 133,
             'sso_role' => 'student',
-            'sso_name' => $student->full_name,
-            'sso_email' => $student->email,
+            'sso_name' => 'Restricted Student',
+            'sso_email' => 'restricted@example.test',
             'user' => [
-                'id' => $student->id,
-                'name' => $student->full_name,
-                'email' => $student->email,
+                'id' => 133,
+                'name' => 'Restricted Student',
+                'email' => 'restricted@example.test',
                 'role' => 'student',
             ],
         ];
@@ -198,15 +208,10 @@ class EntryEaseWorkflowTest extends TestCase
 
     public function test_portal_admission_officer_role_has_officer_access(): void
     {
-        $student = Student::create([
-            'full_name' => 'Portal Applicant',
-            'email' => 'portal.applicant@example.test',
-            'phone' => 'N/A',
-            'password' => 'password',
-        ]);
-
         $applicant = Applicant::create([
-            'student_id' => $student->id,
+            'deoris_user_id' => 201,
+            'portal_student_name' => 'Portal Applicant',
+            'portal_student_email' => 'portal.applicant@example.test',
             'grade_level' => 'Grade 7',
             'status' => 'Pending',
             'admission_status' => 'pending',
@@ -238,7 +243,11 @@ class EntryEaseWorkflowTest extends TestCase
 
     public function test_only_students_can_apply_and_students_only_manage_their_own_applications(): void
     {
+        config(['deoris.portal.publish_enabled' => false]);
+        Storage::fake('private');
+
         $ownerSession = [
+            'sso_id' => 201,
             'sso_role' => 'student',
             'sso_name' => 'Owner Student',
             'sso_email' => 'owner@example.test',
@@ -251,6 +260,7 @@ class EntryEaseWorkflowTest extends TestCase
         ];
 
         $otherSession = [
+            'sso_id' => 202,
             'sso_role' => 'student',
             'sso_name' => 'Other Student',
             'sso_email' => 'other@example.test',
@@ -262,19 +272,39 @@ class EntryEaseWorkflowTest extends TestCase
             ],
         ];
 
-        $this->withSession(['sso_role' => 'admin'])
+        $this->withSession([
+            'sso_id' => 1,
+            'sso_role' => 'admin',
+            'sso_name' => 'Admin',
+            'sso_email' => 'admin@example.test',
+        ])
             ->get(route('student.apply'))
             ->assertForbidden();
 
-        $this->withSession(['sso_role' => 'registrar'])
+        $this->withSession([
+            'sso_id' => 2,
+            'sso_role' => 'registrar',
+            'sso_name' => 'Registrar',
+            'sso_email' => 'registrar@example.test',
+        ])
             ->get(route('student.apply'))
             ->assertForbidden();
 
-        $this->withSession(['sso_role' => 'admin'])
+        $this->withSession([
+            'sso_id' => 1,
+            'sso_role' => 'admin',
+            'sso_name' => 'Admin',
+            'sso_email' => 'admin@example.test',
+        ])
             ->postJson('/api/student/apply', ['grade_level' => 'Grade 7'])
             ->assertForbidden();
 
-        $this->withSession(['sso_role' => 'registrar'])
+        $this->withSession([
+            'sso_id' => 2,
+            'sso_role' => 'registrar',
+            'sso_name' => 'Registrar',
+            'sso_email' => 'registrar@example.test',
+        ])
             ->postJson('/api/student/apply', ['grade_level' => 'Grade 7'])
             ->assertForbidden();
 
@@ -283,21 +313,20 @@ class EntryEaseWorkflowTest extends TestCase
             ->assertUnprocessable();
 
         $this->withSession($ownerSession)
-            ->postJson('/api/student/apply', ['grade_level' => 'Grade 7'])
-            ->assertCreated();
+            ->post(route('student.apply.store'), [
+                'phone' => '09170000002',
+                'previous_school' => 'Owner Elementary School',
+                'photo_2x2' => UploadedFile::fake()->create('owner-photo.jpg', 128, 'image/jpeg'),
+                'psa_birth_cert' => UploadedFile::fake()->create('owner-psa.pdf', 128, 'application/pdf'),
+            ])
+            ->assertRedirect(route('student.applications'));
 
-        $owner = Student::where('email', 'owner@example.test')->firstOrFail();
-        $ownerApplication = Applicant::where('student_id', $owner->id)->firstOrFail();
-
-        $other = Student::create([
-            'full_name' => 'Other Student',
-            'email' => 'other@example.test',
-            'phone' => 'N/A',
-            'password' => 'password',
-        ]);
+        $ownerApplication = Applicant::where('deoris_user_id', 201)->firstOrFail();
 
         $otherApplication = Applicant::create([
-            'student_id' => $other->id,
+            'deoris_user_id' => 202,
+            'portal_student_name' => 'Other Student',
+            'portal_student_email' => 'other@example.test',
             'grade_level' => 'Grade 7',
             'status' => 'Pending',
             'admission_status' => 'pending',
@@ -312,8 +341,8 @@ class EntryEaseWorkflowTest extends TestCase
         $this->withSession($ownerSession)
             ->get(route('student.applications'))
             ->assertOk()
-            ->assertSee('data-id="' . $ownerApplication->id . '"', false)
-            ->assertDontSee('data-id="' . $otherApplication->id . '"', false);
+            ->assertSee('owner@example.test')
+            ->assertDontSee('other@example.test');
 
         $this->withSession($ownerSession)
             ->putJson("/api/student/applications/{$otherApplication->id}", ['grade_level' => 'Grade 7'])
@@ -325,15 +354,13 @@ class EntryEaseWorkflowTest extends TestCase
 
         $this->withSession($ownerSession)
             ->putJson("/api/student/applications/{$ownerApplication->id}", ['grade_level' => 'Grade 7'])
-            ->assertOk()
-            ->assertJsonPath('success', true);
+            ->assertForbidden();
 
         $this->withSession($ownerSession)
             ->deleteJson("/api/student/applications/{$ownerApplication->id}")
-            ->assertOk()
-            ->assertJsonPath('success', true);
+            ->assertForbidden();
 
-        $this->assertDatabaseMissing('applicants', ['id' => $ownerApplication->id]);
+        $this->assertDatabaseHas('applicants', ['id' => $ownerApplication->id]);
         $this->assertDatabaseHas('applicants', ['id' => $otherApplication->id]);
     }
 }

@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Events\Deoris\ApplicationSubmitted;
 use App\Jobs\PublishPortalEcosystemEventJob;
 use App\Models\Applicant;
-use App\Models\Student;
 use App\Services\Admission\AdmissionEventService;
 use App\Support\DeorisBroadcast;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,15 +31,10 @@ class DeorisIntegrationVerifyTest extends TestCase
 
         $this->assertFalse(DeorisBroadcast::isEnabled());
 
-        $student = Student::factory()->create([
-            'email' => 'verify@deoris.test',
-            'full_name' => 'Verify Student',
-            'phone' => '09170000000',
-            'password' => 'secret',
-        ]);
-
         $applicant = Applicant::create([
-            'student_id' => $student->id,
+            'deoris_user_id' => 1002,
+            'portal_student_name' => 'Verify Student',
+            'portal_student_email' => 'verify@deoris.test',
             'grade_level' => 'Grade 7',
             'status' => 'Pending',
             'admission_status' => 'pending',

@@ -29,15 +29,10 @@ class DeorisEventBusTest extends TestCase
             'deoris.portal.event_secret' => 'test-entryease-secret',
         ]);
 
-        $student = \App\Models\Student::factory()->create([
-            'full_name' => 'Test Student',
-            'email' => 'bus.test@example.com',
-            'phone' => '09123456789',
-            'password' => 'secret',
-        ]);
-
         $applicant = \App\Models\Applicant::create([
-            'student_id' => $student->id,
+            'deoris_user_id' => 1001,
+            'portal_student_name' => 'Test Student',
+            'portal_student_email' => 'bus.test@example.com',
             'grade_level' => 'Grade 7',
             'status' => 'Pending',
             'admission_status' => 'pending',
@@ -115,7 +110,12 @@ class DeorisEventBusTest extends TestCase
         $signature = app(EventSignatureService::class)->sign($envelope, 'test-secret');
         $payload = $envelope->toArray($signature);
 
-        $response = $this->postJson('/entryease/api/events/inbound', $payload);
+        $response = $this->withSession([
+            'sso_id' => 5001,
+            'sso_role' => 'registrar',
+            'sso_name' => 'Registrar EventBus',
+            'sso_email' => 'registrar.eventbus@example.test',
+        ])->postJson('/entryease/api/events/inbound', $payload);
 
         $response->assertAccepted();
         Queue::assertPushed(ProcessInboundDeorisEventJob::class);
