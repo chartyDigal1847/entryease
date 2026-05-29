@@ -14,12 +14,42 @@ use Illuminate\Support\Facades\Log;
 
 class EntryEaseController extends Controller
 {
+    private function debugLog(string $hypothesisId, string $location, string $message, array $data = []): void
+    {
+        try {
+            $payload = json_encode([
+                'sessionId' => '0cc008',
+                'runId' => 'run4',
+                'hypothesisId' => $hypothesisId,
+                'location' => $location,
+                'message' => $message,
+                'data' => $data,
+                'timestamp' => (int) floor(microtime(true) * 1000),
+            ], JSON_UNESCAPED_SLASHES);
+
+            if ($payload === false) {
+                return;
+            }
+
+            file_put_contents('C:/xampp/htdocs/deoris/debug-0cc008.log', $payload . PHP_EOL, FILE_APPEND | LOCK_EX);
+        } catch (\Throwable $e) {
+            // Ignore debug logging failures to avoid affecting SSO flow.
+        }
+    }
+
     public function ssoExchange(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'token'    => 'required|string|max:500',
             'embedded' => 'sometimes|boolean',
         ]);
+        // #region agent log
+        $this->debugLog('H8', 'EntryEaseController::ssoExchange:entry', 'module ssoExchange called', [
+            'hasToken' => !empty($validated['token']),
+            'embedded' => (bool) ($validated['embedded'] ?? false),
+            'sessionId' => $request->session()->getId(),
+        ]);
+        // #endregion
 
         $portalUrl = rtrim((string) config('app.portal_url', 'https://deoris.test'), '/');
         $response = Http::withHeaders([
@@ -28,14 +58,30 @@ class EntryEaseController extends Controller
         ])->post($portalUrl . '/api/v1/sso/exchange', [
             'token' => $validated['token'],
         ]);
+        // #region agent log
+        $this->debugLog('H8', 'EntryEaseController::ssoExchange:portalResponse', 'portal exchange response received', [
+            'status' => $response->status(),
+            'ok' => $response->ok(),
+        ]);
+        // #endregion
 
         if (! $response->ok()) {
+            // #region agent log
+            $this->debugLog('H8', 'EntryEaseController::ssoExchange:invalidToken', 'module exchange rejected token', [
+                'status' => $response->status(),
+            ]);
+            // #endregion
             return response()->json(['success' => false, 'message' => 'Invalid SSO token'], 401);
         }
 
         $payload = $response->json();
         $user = $payload['user'] ?? $payload['data']['user'] ?? null;
         if (!is_array($user) || empty($user['id'])) {
+            // #region agent log
+            $this->debugLog('H8', 'EntryEaseController::ssoExchange:invalidPayload', 'module exchange payload missing user id', [
+                'hasUserArray' => is_array($user),
+            ]);
+            // #endregion
             return response()->json(['success' => false, 'message' => 'Invalid SSO response'], 401);
         }
 
@@ -55,6 +101,13 @@ class EntryEaseController extends Controller
             'user'                 => ['id' => $id, 'role' => $newRole, 'name' => $name, 'email' => $email],
             'sso_authenticated_at' => now()->timestamp,
         ]);
+        // #region agent log
+        $this->debugLog('H8', 'EntryEaseController::ssoExchange:sessionHydrated', 'module session hydrated after exchange', [
+            'ssoId' => $id,
+            'role' => $newRole,
+            'sessionId' => $request->session()->getId(),
+        ]);
+        // #endregion
 
         $redirect = match ($newRole) {
             'admin'             => route('admin.dashboard'),
