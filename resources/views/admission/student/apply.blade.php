@@ -14,19 +14,9 @@
     <div class="page-header student-section-card">
         <div class="page-header-text">
             <h2><i class="fa-solid fa-file-pen"></i><span>Grade 7 Application</span></h2>
-            <p>Complete all fields and upload your documents to submit your application.</p>
         </div>
         <div class="ee-page-actions">
             <x-back-button />
-        </div>
-    </div>
-
-    {{-- ── One-time notice ─────────────────────────────────── --}}
-    <div class="apply-notice student-section-card">
-        <i class="fa-solid fa-circle-info"></i>
-        <div>
-            <strong>One application per account.</strong>
-            Once submitted, your application cannot be edited or deleted. Make sure all information is correct before submitting.
         </div>
     </div>
 
@@ -59,7 +49,6 @@
                 <div class="apply-section-num">1</div>
                 <div>
                     <h3>Grade Level</h3>
-                    <p>EntryEase handles Grade 7 admission only.</p>
                 </div>
             </div>
             <div class="apply-grade-display">
@@ -75,7 +64,6 @@
                 <div class="apply-section-num">2</div>
                 <div>
                     <h3>Personal Information</h3>
-                    <p>Your contact number and previous school.</p>
                 </div>
             </div>
 
@@ -87,7 +75,6 @@
                            value="{{ $student->name ?? '' }}"
                            disabled
                            class="apply-input apply-input-disabled">
-                    <span class="apply-field-hint">Pulled from your account — contact support to change.</span>
                 </div>
 
                 <div class="apply-field-group">
@@ -137,7 +124,6 @@
                 <div class="apply-section-num">3</div>
                 <div>
                     <h3>Required Documents</h3>
-                    <p>Upload both documents. Files are stored securely and only visible to admission officers.</p>
                 </div>
             </div>
 
@@ -151,14 +137,13 @@
                         </div>
                         <div>
                             <div class="apply-doc-title">2×2 Photo <span class="apply-required">*</span></div>
-                            <div class="apply-doc-hint">JPG or PNG, max 5 MB</div>
                         </div>
                     </div>
 
                     <div class="file-upload-area" id="photo2x2Area">
                         <i class="fa-solid fa-cloud-arrow-up"></i>
                         <p><strong>Click to upload or drag & drop</strong></p>
-                        <p class="upload-hint">Passport-size photo with white background</p>
+                        <p class="upload-hint"></p>
                         <input type="file"
                                id="photo2x2Input"
                                name="photo_2x2"
@@ -179,14 +164,13 @@
                         </div>
                         <div>
                             <div class="apply-doc-title">PSA Birth Certificate <span class="apply-required">*</span></div>
-                            <div class="apply-doc-hint">PDF, JPG, or PNG, max 5 MB</div>
                         </div>
                     </div>
 
                     <div class="file-upload-area" id="psaArea">
                         <i class="fa-solid fa-cloud-arrow-up"></i>
                         <p><strong>Click to upload or drag & drop</strong></p>
-                        <p class="upload-hint">Philippine Statistics Authority issued copy</p>
+                        <p class="upload-hint"></p>
                         <input type="file"
                                id="psaInput"
                                name="psa_birth_cert"
@@ -204,10 +188,6 @@
 
         {{-- ── Submit ───────────────────────────────────────── --}}
         <div class="apply-submit-row student-section-card">
-            <div class="apply-submit-note">
-                <i class="fa-solid fa-lock"></i>
-                <span>By submitting, you confirm all information is accurate. This application cannot be changed after submission.</span>
-            </div>
             <button type="submit" class="submit-btn" id="submitBtn">
                 <i class="fa-solid fa-paper-plane"></i>
                 <span>Submit Application</span>
@@ -255,7 +235,8 @@
 
         area.classList.add('has-file');
         area.querySelector('p strong').textContent = file.name;
-        area.querySelector('.upload-hint').textContent = size;
+        const hint = area.querySelector('.upload-hint');
+        if (hint) hint.textContent = size;
 
         if (preview && file.type.startsWith('image/')) {
             const reader = new FileReader();

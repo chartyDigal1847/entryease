@@ -132,10 +132,6 @@
                 <i class="fa-solid fa-user-plus"></i> Assign
             </button>
         </form>
-        <p class="sa-assign-hint">
-            <i class="fa-solid fa-circle-info"></i>
-            {{ $unassigned->count() }} unassigned applicant{{ $unassigned->count() !== 1 ? 's' : '' }} available.
-        </p>
     </div>
 </div>
 @endif
@@ -153,7 +149,6 @@
             <div class="es-empty" style="border:none;box-shadow:none;padding:3rem 1rem">
                 <div class="es-empty-icon"><i class="fa-solid fa-user-slash"></i></div>
                 <h3>No applicants assigned</h3>
-                <p>Use the form above to assign applicants to this exam schedule.</p>
             </div>
         @else
             <div class="table-responsive">

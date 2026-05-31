@@ -215,7 +215,7 @@
                 <a href="{{ route('student.apply') }}" class="quick-card dashboard-card qc-highlight">
                     <div class="quick-card-icon"><i class="fa-solid fa-file-pen"></i></div>
                     <h3>Apply Now</h3>
-                    <p>Submit your Grade 7 application to get started.</p>
+                    <p>Submit your Grade 7 application.</p>
                     <div class="quick-card-arrow"><i class="fa-solid fa-arrow-right"></i><span>Apply</span></div>
                 </a>
             @else

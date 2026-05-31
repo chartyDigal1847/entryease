@@ -72,7 +72,6 @@
                         </select>
                         <i class="fa-solid fa-chevron-down es-select-arrow"></i>
                     </div>
-                    <span class="es-hint">Online exams are auto-graded. On-site exams require manual score entry.</span>
                     @error('exam_type')<span class="es-err">{{ $message }}</span>@enderror
                 </div>
 

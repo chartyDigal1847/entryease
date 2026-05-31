@@ -65,12 +65,6 @@
             </div>
         </div>
 
-        {{-- Workflow note --}}
-        <div class="app-locked-notice" style="background:#f8fafc;border-color:#e2e8f0;">
-            <i class="fa-solid fa-route"></i>
-            <span>Admission flow: Submitted → Under Review → Exam → Result → Final Decision. Approval happens only after a passing exam score.</span>
-        </div>
-
         {{-- Lock notice --}}
         <div class="app-locked-notice">
             <i class="fa-solid fa-lock"></i>
@@ -202,7 +196,7 @@
         </div>
         <h3 style="color:var(--primary);margin-bottom:.5rem">No application yet</h3>
         <p style="color:var(--text-muted);margin-bottom:1.5rem">
-            You haven't submitted a Grade 7 application. Click below to get started.
+            No application on file.
         </p>
         <a href="{{ route('student.apply') }}" class="submit-btn" style="display:inline-flex">
             <i class="fa-solid fa-file-pen"></i> Apply Now

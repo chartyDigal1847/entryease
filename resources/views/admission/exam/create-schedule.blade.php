@@ -16,7 +16,6 @@
 <div class="es-page-header">
     <div class="es-page-header-left">
         <h1 class="es-page-title">New Exam Schedule</h1>
-        <p class="es-page-sub">Set up a Grade 7 entrance examination slot</p>
     </div>
     <div class="ee-page-actions">
         <x-back-button variant="secondary" />
@@ -74,7 +73,6 @@
                         </select>
                         <i class="fa-solid fa-chevron-down es-select-arrow"></i>
                     </div>
-                    <span class="es-hint">Online exams are auto-graded. On-site exams require manual score entry.</span>
                     @error('exam_type')<span class="es-err">{{ $message }}</span>@enderror
                 </div>
 
@@ -112,7 +110,6 @@
                            min="1" max="500"
                            class="es-input {{ $errors->has('slots') ? 'es-input-err' : '' }}"
                            required>
-                    <span class="es-hint">Maximum number of examinees for this slot.</span>
                     @error('slots')<span class="es-err">{{ $message }}</span>@enderror
                 </div>
 

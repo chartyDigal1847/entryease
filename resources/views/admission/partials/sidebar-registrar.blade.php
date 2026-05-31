@@ -47,10 +47,6 @@
         @endforeach
 
         @if($schedules->isEmpty())
-        <li class="sidebar-hint">
-            <i class="fa-solid fa-circle-info"></i>
-            <span>Create a schedule to add questions.</span>
-        </li>
         @endif
     </ul>
 </nav>
