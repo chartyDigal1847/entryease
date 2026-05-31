@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\StreamsApplicantDocuments;
 use App\Models\Applicant;
 use App\Models\ExamAttempt;
 use App\Models\ExamAttemptAnswer;
@@ -9,7 +10,6 @@ use App\Models\ExamScore;
 use App\Services\Admission\AdmissionEventService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -20,6 +20,8 @@ use Illuminate\Support\Facades\Log;
  */
 class StudentController extends Controller
 {
+    use StreamsApplicantDocuments;
+
     /**
      * Get DEORIS user ID from SSO session.
      *
@@ -210,27 +212,12 @@ class StudentController extends Controller
     {
         $deorisUserId = $this->getDeorisUserId($request);
 
-        $allowed = ['photo_2x2', 'psa_birth_cert'];
-        if (!in_array($document, $allowed, true)) {
-            abort(404, 'Document not found.');
-        }
-
-        // Get the applicant record to find the document path
         $applicant = Applicant::where('deoris_user_id', $deorisUserId)->first();
-        if (!$applicant) {
+        if (! $applicant) {
             abort(404, 'Application not found.');
         }
 
-        $filePath = $applicant->{$document};
-
-        if (!$filePath || !Storage::disk('private')->exists($filePath)) {
-            abort(404, 'File not found on server.');
-        }
-
-        return Storage::disk('private')->download(
-            $filePath,
-            basename($filePath)
-        );
+        return $this->downloadApplicantDocument($applicant, $document);
     }
 
     /**
