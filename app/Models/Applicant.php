@@ -9,6 +9,18 @@ class Applicant extends Model
 {
     use HasFactory;
 
+    const STATUS_PENDING      = 'Pending';
+    const STATUS_UNDER_REVIEW = 'Under Review';
+    const STATUS_APPROVED     = 'Approved';
+    const STATUS_REJECTED     = 'Rejected';
+
+    const STATUSES = [
+        self::STATUS_PENDING,
+        self::STATUS_UNDER_REVIEW,
+        self::STATUS_APPROVED,
+        self::STATUS_REJECTED,
+    ];
+
     protected $fillable = [
         'deoris_user_id',
         'portal_student_email',
@@ -128,5 +140,104 @@ class Applicant extends Model
             'Rejected' => 'rejected',
             default => 'pending',
         };
+    }
+
+    public static function admissionStatusFor(string $status): string
+    {
+        return match ($status) {
+            self::STATUS_APPROVED     => 'approved',
+            self::STATUS_REJECTED     => 'rejected',
+            self::STATUS_UNDER_REVIEW => 'under_review',
+            default                   => 'pending',
+        };
+    }
+
+    public function hasPassingExamScore(): bool
+    {
+        $this->loadMissing('examScore');
+
+        return $this->examScore !== null && $this->examScore->passed === true;
+    }
+
+    public function canTransitionTo(string $newStatus): bool
+    {
+        if ($newStatus === $this->status) {
+            return true;
+        }
+
+        return in_array($newStatus, $this->nextStatuses(), true);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function nextStatuses(): array
+    {
+        return match ($this->status) {
+            self::STATUS_PENDING => [
+                self::STATUS_UNDER_REVIEW,
+                self::STATUS_REJECTED,
+            ],
+            self::STATUS_UNDER_REVIEW => array_values(array_filter([
+                $this->hasPassingExamScore() ? self::STATUS_APPROVED : null,
+                self::STATUS_REJECTED,
+            ])),
+            default => [],
+        };
+    }
+
+    /**
+     * Human-readable exam workflow stage for UI.
+     */
+    public function getExamStageLabelAttribute(): string
+    {
+        if (in_array($this->status, [self::STATUS_APPROVED, self::STATUS_REJECTED], true)) {
+            return '';
+        }
+
+        $this->loadMissing('examScore');
+
+        if ($this->examScore) {
+            return $this->examScore->passed ? 'Exam passed' : 'Exam failed';
+        }
+
+        if ($this->exam_schedule_id) {
+            return 'Exam scheduled';
+        }
+
+        return 'No exam scheduled';
+    }
+
+    /**
+     * @throws \InvalidArgumentException
+     */
+    public function transitionTo(string $newStatus, ?string $reviewedBy = null): void
+    {
+        if (! $this->canTransitionTo($newStatus)) {
+            if ($newStatus === self::STATUS_APPROVED && $this->status === self::STATUS_UNDER_REVIEW) {
+                throw new \InvalidArgumentException(
+                    'Approval requires a passing exam score (75% or higher).'
+                );
+            }
+
+            throw new \InvalidArgumentException(
+                "Cannot transition application from '{$this->status}' to '{$newStatus}'."
+            );
+        }
+
+        if ($newStatus === $this->status) {
+            return;
+        }
+
+        $data = [
+            'status'           => $newStatus,
+            'admission_status' => self::admissionStatusFor($newStatus),
+        ];
+
+        if ($reviewedBy !== null) {
+            $data['reviewed_by'] = $reviewedBy;
+        }
+
+        $this->update($data);
     }
 }

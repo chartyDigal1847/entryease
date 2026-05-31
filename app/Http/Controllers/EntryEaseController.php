@@ -422,12 +422,7 @@ class EntryEaseController extends Controller
 
     private function admissionStatusFor(?string $status): string
     {
-        return match ($status) {
-            'Approved' => 'approved',
-            'Rejected' => 'rejected',
-            'Under Review' => 'under_review',
-            default => 'pending',
-        };
+        return Applicant::admissionStatusFor($status ?? Applicant::STATUS_PENDING);
     }
 
     public function bootstrap(Request $request): JsonResponse
@@ -494,10 +489,13 @@ class EntryEaseController extends Controller
             'student_id'      => 'required|exists:students,id',
             'grade_level'     => 'required|string|in:Grade 7',
             'additional_info' => 'nullable|string',
-            'status'          => 'nullable|in:Pending,Under Review,Approved,Rejected',
+            'status'          => 'nullable|in:Pending,Under Review',
         ]);
 
-        $validated['admission_status'] = $this->admissionStatusFor($validated['status'] ?? 'Pending');
+        $initialStatus = $validated['status'] ?? Applicant::STATUS_PENDING;
+        unset($validated['status']);
+        $validated['admission_status'] = Applicant::admissionStatusFor($initialStatus);
+        $validated['status'] = $initialStatus;
 
         $applicant = Applicant::create($validated);
         ActivityLog::record("New applicant created: {$applicant->id}", 'blue');
@@ -512,26 +510,41 @@ class EntryEaseController extends Controller
         $validated = $request->validate([
             'grade_level'     => 'nullable|string|in:Grade 7',
             'additional_info' => 'nullable|string',
-            'status'          => 'nullable|in:Pending,Under Review,Approved,Rejected',
             'admin_notes'     => 'nullable|string',
+            'status'          => empty($applicant->nextStatuses())
+                ? 'prohibited'
+                : 'nullable|in:' . implode(',', $applicant->nextStatuses()),
         ]);
 
         $oldStatus = $applicant->status;
-        if (array_key_exists('status', $validated)) {
-            $validated['admission_status'] = $this->admissionStatusFor($validated['status']);
+
+        if (! empty($validated['status'] ?? null)) {
+            try {
+                $applicant->transitionTo($validated['status'], (string) session('sso_id'));
+            } catch (\InvalidArgumentException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
         }
 
-        $applicant->update($validated);
-        if ($oldStatus !== ($validated['status'] ?? $oldStatus)) {
-            ActivityLog::record("Applicant {$applicant->id} status changed to {$applicant->status}", 'amber');
+        unset($validated['status']);
+
+        if (! empty($validated)) {
+            $applicant->update($validated);
+        }
+
+        $fresh = $applicant->fresh();
+
+        if ($oldStatus !== $fresh->status) {
+            ActivityLog::record("Applicant {$fresh->id} status changed to {$fresh->status}", 'amber');
 
             app(AdmissionEventService::class)->statusChanged(
-                $applicant->fresh(),
+                $fresh,
                 $oldStatus,
                 (string) session('sso_id'),
             );
         }
-        return response()->json(['message' => 'Applicant updated successfully', 'applicant' => $applicant]);
+
+        return response()->json(['message' => 'Applicant updated successfully', 'applicant' => $fresh]);
     }
 
     public function deleteApplicant(Request $request, Applicant $applicant): JsonResponse

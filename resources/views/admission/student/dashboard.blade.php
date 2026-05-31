@@ -18,6 +18,7 @@
     $hasSchedule = $hasApp && $latestApp->examSchedule;
     $hasScore    = $hasApp && $latestApp->examScore;
     $examDone    = $hasApp && optional($latestApp->latestExamAttempt)->status === 'submitted';
+    $isUnderReview = $hasApp && $latestApp->status !== 'Pending';
     $isOnlineExam = $hasSchedule && $latestApp->examSchedule->exam_type === 'online';
     $isOnsiteExam = $hasSchedule && $latestApp->examSchedule->exam_type === 'onsite';
     $canTakeExam = $isOnlineExam && !$hasScore && !$examDone
@@ -55,15 +56,32 @@
             <i class="fa-solid fa-list-check"></i><span>Your Progress</span>
         </h3>
         <div class="progress-steps">
-            {{-- Step 1: Applied --}}
+            {{-- Step 1: Submitted --}}
             <div class="progress-step done">
                 <div class="progress-step-icon"><i class="fa-solid fa-file-pen"></i></div>
                 <div class="progress-step-body">
-                    <div class="progress-step-label">Applied</div>
+                    <div class="progress-step-label">Submitted</div>
                     <div class="progress-step-sub">{{ $latestApp->created_at->format('M d, Y') }}</div>
                 </div>
             </div>
-            {{-- Step 2: Exam Scheduled --}}
+            {{-- Step 2: Under Review --}}
+            <div class="progress-step-connector {{ $isUnderReview ? 'done' : '' }}"></div>
+            <div class="progress-step {{ $latestApp->status === 'Pending' ? 'active' : ($isUnderReview ? 'done' : 'waiting') }}">
+                <div class="progress-step-icon"><i class="fa-solid fa-eye"></i></div>
+                <div class="progress-step-body">
+                    <div class="progress-step-label">Under Review</div>
+                    <div class="progress-step-sub">
+                        @if($latestApp->status === 'Pending')
+                            Waiting for officer
+                        @elseif($latestApp->status === 'Under Review')
+                            In progress
+                        @else
+                            Completed
+                        @endif
+                    </div>
+                </div>
+            </div>
+            {{-- Step 3: Exam Scheduled --}}
             <div class="progress-step-connector {{ $hasSchedule ? 'done' : '' }}"></div>
             <div class="progress-step {{ $hasSchedule ? 'done' : 'waiting' }}">
                 <div class="progress-step-icon">
@@ -82,7 +100,7 @@
                     </div>
                 </div>
             </div>
-            {{-- Step 3: Exam Taken --}}
+            {{-- Step 4: Exam Taken --}}
             <div class="progress-step-connector {{ $hasScore || $examDone ? 'done' : '' }}"></div>
             <div class="progress-step {{ $hasScore || $examDone ? 'done' : ($hasSchedule ? 'active' : 'waiting') }}">
                 <div class="progress-step-icon">
@@ -100,7 +118,7 @@
                     </div>
                 </div>
             </div>
-            {{-- Step 4: Result --}}
+            {{-- Step 5: Result --}}
             <div class="progress-step-connector {{ $hasScore ? 'done' : '' }}"></div>
             <div class="progress-step {{ $hasScore ? 'done' : 'waiting' }}">
                 <div class="progress-step-icon">
@@ -114,14 +132,18 @@
                     <div class="progress-step-label">Result</div>
                     <div class="progress-step-sub">
                         @if($hasScore)
-                            <strong>Completed</strong>
+                            @if($latestApp->examScore->passed)
+                                Passed ({{ $latestApp->examScore->percentage }}%)
+                            @else
+                                Failed ({{ $latestApp->examScore->percentage }}%)
+                            @endif
                         @else
                             Not yet available
                         @endif
                     </div>
                 </div>
             </div>
-            {{-- Step 5: Decision --}}
+            {{-- Step 6: Decision --}}
             <div class="progress-step-connector {{ in_array($latestApp->status, ['Approved','Rejected']) ? 'done' : '' }}"></div>
             <div class="progress-step {{ $latestApp->status === 'Approved' ? 'done approved' : ($latestApp->status === 'Rejected' ? 'done rejected' : 'waiting') }}">
                 <div class="progress-step-icon">
@@ -172,8 +194,8 @@
             <div class="dash-cta-banner cta-waiting">
                 <i class="fa-solid fa-hourglass-half"></i>
                 <div>
-                    <strong>Exam submitted. Awaiting officer review.</strong>
-                    <span>Status: Completed</span>
+                    <strong>Exam result recorded.</strong>
+                    <span>The admission office will review your score before making a final decision.</span>
                 </div>
                 <a href="{{ route('student.results') }}" class="registrar-btn registrar-btn-secondary" style="white-space:nowrap">
                     View Results

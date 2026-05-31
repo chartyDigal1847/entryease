@@ -246,7 +246,7 @@ class ExamController extends Controller
 
         $applicants  = $schedule->applicants()->with('examScore')->get();
         $unassigned  = Applicant::whereNull('exam_schedule_id')
-                                ->where('status', '!=', 'Rejected')
+                                ->where('status', Applicant::STATUS_UNDER_REVIEW)
                                 ->get();
         $userContext = $this->userContext();
 
@@ -269,6 +269,10 @@ class ExamController extends Controller
         ]);
 
         $applicant = Applicant::findOrFail($validated['applicant_id']);
+
+        if ($applicant->status !== Applicant::STATUS_UNDER_REVIEW) {
+            return back()->with('error', 'Only applications under review can be assigned to an exam schedule.');
+        }
 
         if ($schedule->availableSlots() <= 0) {
             return back()->with('error', 'No available slots in this schedule.');

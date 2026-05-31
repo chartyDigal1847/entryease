@@ -34,12 +34,7 @@ class RegistrarController extends Controller
 
     private function admissionStatusFor(string $status): string
     {
-        return match ($status) {
-            'Approved' => 'approved',
-            'Rejected' => 'rejected',
-            'Under Review' => 'under_review',
-            default => 'pending',
-        };
+        return Applicant::admissionStatusFor($status);
     }
 
     public function dashboard()
@@ -98,38 +93,34 @@ class RegistrarController extends Controller
 
     public function updateStatus(Request $request, Applicant $applicant)
     {
-        // Prevent status updates for Approved and Rejected applications
-        if (in_array($applicant->status, ['Approved', 'Rejected'], true)) {
+        if (in_array($applicant->status, [Applicant::STATUS_APPROVED, Applicant::STATUS_REJECTED], true)) {
             return back()->with('error', 'Cannot update status for approved or rejected applications.');
         }
 
+        $allowed = $applicant->nextStatuses();
+
+        if (empty($allowed)) {
+            return back()->with('error', 'No further status changes are allowed for this application.');
+        }
+
         $validated = $request->validate([
-            'status' => 'required|in:Pending,Under Review,Approved,Rejected',
+            'status' => 'required|in:' . implode(',', $allowed),
             'notes'  => 'nullable|string|max:1000',
         ]);
 
         $previousStatus = $applicant->status;
 
         try {
-            // Prepare update data - only update notes if provided and not empty
-            $updateData = [
-                'status'           => $validated['status'],
-                'admission_status' => $this->admissionStatusFor($validated['status']),
-                'reviewed_by'      => $this->userId($request),
-            ];
+            $applicant->transitionTo($validated['status'], (string) $this->userId($request));
 
-            // Only update admin_notes if new notes are provided
-            if (!empty($validated['notes'])) {
-                $updateData['admin_notes'] = $validated['notes'];
+            if (! empty($validated['notes'])) {
+                $applicant->update(['admin_notes' => $validated['notes']]);
             }
-
-            $applicant->update($updateData);
 
             Log::info('[Admission] Application status updated', [
                 'applicant_id' => $applicant->id,
                 'previous_status' => $previousStatus,
                 'new_status' => $validated['status'],
-                'new_admission_status' => $this->admissionStatusFor($validated['status']),
                 'reviewed_by' => $this->userId($request),
             ]);
 
@@ -140,13 +131,14 @@ class RegistrarController extends Controller
             );
 
             return redirect()->route('registrar.applications')->with('success', 'Application status updated successfully.');
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
         } catch (\Exception $e) {
             Log::error('[Admission] Error updating application status', [
                 'applicant_id' => $applicant->id,
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
             ]);
-            
+
             return back()->with('error', 'Failed to update application status: ' . $e->getMessage());
         }
     }

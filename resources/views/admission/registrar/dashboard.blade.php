@@ -245,6 +245,9 @@
                                         @case('Approved') approved @break
                                         @case('Rejected') rejected @break
                                     @endswitch">{{ $app->status }}</span>
+                                    @if($app->exam_stage_label)
+                                        <div class="td-muted" style="font-size:.75rem;margin-top:.2rem;">{{ $app->exam_stage_label }}</div>
+                                    @endif
                                 </td>
                                 <td class="td-muted">{{ $app->created_at->format('M d, Y') }}</td>
                                 <td>

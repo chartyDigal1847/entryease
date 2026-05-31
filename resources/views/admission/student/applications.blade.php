@@ -65,6 +65,12 @@
             </div>
         </div>
 
+        {{-- Workflow note --}}
+        <div class="app-locked-notice" style="background:#f8fafc;border-color:#e2e8f0;">
+            <i class="fa-solid fa-route"></i>
+            <span>Admission flow: Submitted → Under Review → Exam → Result → Final Decision. Approval happens only after a passing exam score.</span>
+        </div>
+
         {{-- Lock notice --}}
         <div class="app-locked-notice">
             <i class="fa-solid fa-lock"></i>
@@ -155,9 +161,9 @@
                 <i class="fa-solid fa-list-check"></i> Exam Result
             </div>
             <div class="app-score-display">
-                <span class="exam-result-badge passed">
-                    <i class="fa-solid fa-circle-check"></i>
-                    Completed
+                <span class="exam-result-badge {{ $application->examScore->passed ? 'passed' : 'failed' }}">
+                    <i class="fa-solid {{ $application->examScore->passed ? 'fa-circle-check' : 'fa-circle-xmark' }}"></i>
+                    {{ $application->examScore->passed ? 'Passed' : 'Failed' }} — {{ $application->examScore->percentage }}%
                 </span>
             </div>
         </div>

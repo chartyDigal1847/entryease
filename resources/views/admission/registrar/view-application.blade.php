@@ -178,17 +178,37 @@
             @endif
         </div>
         <div class="registrar-card-body">
+            @php
+                $nextStatuses = $applicant->nextStatuses();
+                $isLocked = in_array($applicant->status, [\App\Models\Applicant::STATUS_APPROVED, \App\Models\Applicant::STATUS_REJECTED], true);
+            @endphp
+            @if($applicant->status === \App\Models\Applicant::STATUS_UNDER_REVIEW && ! $applicant->hasPassingExamScore())
+                <div style="margin-bottom:1rem;padding:.85rem 1rem;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:.9rem;">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <strong>Approval requires a passing exam score.</strong>
+                    Assign an exam, record or complete the exam, then approve only if the student passes (75% or higher).
+                </div>
+            @endif
+            @if(! empty($applicant->exam_stage_label))
+                <p style="margin:0 0 1rem;color:var(--text-muted);font-size:.9rem;">
+                    <i class="fa-solid fa-clipboard-check"></i> Exam stage: <strong>{{ $applicant->exam_stage_label }}</strong>
+                </p>
+            @endif
             <form action="{{ route('registrar.application.update', $applicant) }}" method="POST" class="registrar-status-form">
                 @csrf
                 @method('PUT')
                 <div class="registrar-form-group select-with-arrow">
                     <label for="status">Status</label>
-                    <select name="status" id="status" required {{ in_array($applicant->status, ['Approved', 'Rejected']) ? 'disabled' : '' }}>
-                        @foreach(['Pending', 'Under Review', 'Approved', 'Rejected'] as $s)
-                            <option value="{{ $s }}" {{ $applicant->status === $s ? 'selected' : '' }}>{{ $s }}</option>
-                        @endforeach
-                    </select>
-                    @if(in_array($applicant->status, ['Approved', 'Rejected']))
+                    @if($isLocked || empty($nextStatuses))
+                        <input type="text" class="form-control" value="{{ $applicant->status }}" disabled>
+                    @else
+                        <select name="status" id="status" required>
+                            @foreach($nextStatuses as $s)
+                                <option value="{{ $s }}">{{ $s }}</option>
+                            @endforeach
+                        </select>
+                    @endif
+                    @if($isLocked)
                         <span style="color:#999;font-size:.85rem;margin-top:0.5rem;display:block"><i class="fa-solid fa-lock"></i> This status is locked and cannot be changed.</span>
                     @endif
                     @error('status')<span style="color:#C62828;font-size:.85rem">{{ $message }}</span>@enderror
@@ -196,13 +216,16 @@
                 <div class="registrar-form-group">
                     <label for="notes">Notes</label>
                     <textarea name="notes" id="notes"
-                              placeholder="Add remarks or notes about this application...">{{ old('notes', $applicant->admin_notes) }}</textarea>
+                              placeholder="Add remarks or notes about this application..."
+                              {{ $isLocked ? 'disabled' : '' }}>{{ old('notes', $applicant->admin_notes) }}</textarea>
                     @error('notes')<span style="color:#C62828;font-size:.85rem">{{ $message }}</span>@enderror
                 </div>
                 <div class="registrar-form-actions">
-                    <button type="submit" class="registrar-btn registrar-btn-primary" {{ in_array($applicant->status, ['Approved', 'Rejected']) ? 'disabled' : '' }}>
+                    @if(! $isLocked && ! empty($nextStatuses))
+                    <button type="submit" class="registrar-btn registrar-btn-primary">
                         <i class="fa-solid fa-save"></i> Update Status
                     </button>
+                    @endif
                 </div>
             </form>
         </div>

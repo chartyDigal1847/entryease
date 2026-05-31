@@ -129,26 +129,42 @@ class ApplicantController extends Controller
             return $this->forbidden('Only Admission Officers can update application status.');
         }
 
-        if (in_array($applicant->status, ['Approved', 'Rejected'], true)) {
+        if (in_array($applicant->status, [Applicant::STATUS_APPROVED, Applicant::STATUS_REJECTED], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Cannot update a finalized application.',
             ], 422);
         }
 
+        $allowed = $applicant->nextStatuses();
+
+        if (empty($allowed)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No further status changes are allowed for this application.',
+            ], 422);
+        }
+
         $validated = $request->validate([
-            'status'     => ['required', Rule::in(['Pending', 'Under Review', 'Approved', 'Rejected'])],
+            'status'     => ['required', Rule::in($allowed)],
             'admin_notes'=> 'nullable|string|max:2000',
         ]);
 
         $previousStatus = $applicant->status;
 
-        $applicant->update([
-            'status'           => $validated['status'],
-            'admission_status' => $this->admissionStatusFor($validated['status']),
-            'admin_notes'      => $validated['admin_notes'] ?? $applicant->admin_notes,
-            'reviewed_by'      => session('sso_id'),
-        ]);
+        try {
+            $applicant->transitionTo($validated['status'], (string) session('sso_id'));
+
+            if (array_key_exists('admin_notes', $validated)) {
+                $applicant->update(['admin_notes' => $validated['admin_notes'] ?? $applicant->admin_notes]);
+            }
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'success' => false,
+                'error'   => 'invalid_transition',
+                'message' => $e->getMessage(),
+            ], 422);
+        }
 
         $this->eventService->statusChanged(
             $applicant->fresh(),
@@ -239,8 +255,10 @@ class ApplicantController extends Controller
             'deoris_user_id'  => 'required|integer',
             'grade_level'     => 'required|string|in:Grade 7',
             'additional_info' => 'nullable|array',
-            'status'          => ['nullable', Rule::in(['Pending', 'Under Review', 'Approved', 'Rejected'])],
+            'status'          => ['nullable', Rule::in([Applicant::STATUS_PENDING, Applicant::STATUS_UNDER_REVIEW])],
         ]);
+
+        $initialStatus = $validated['status'] ?? Applicant::STATUS_PENDING;
 
         $applicant = Applicant::create([
             'deoris_user_id'   => $validated['deoris_user_id'],
@@ -248,8 +266,8 @@ class ApplicantController extends Controller
             'additional_info'  => isset($validated['additional_info'])
                 ? json_encode($validated['additional_info'])
                 : null,
-            'status'           => $validated['status'] ?? 'Pending',
-            'admission_status' => $this->admissionStatusFor($validated['status'] ?? 'Pending'),
+            'status'           => $initialStatus,
+            'admission_status' => Applicant::admissionStatusFor($initialStatus),
         ]);
 
         $this->eventService->applicationSubmitted($applicant);
@@ -288,12 +306,7 @@ class ApplicantController extends Controller
 
     private function admissionStatusFor(string $status): string
     {
-        return match ($status) {
-            'Approved'     => 'approved',
-            'Rejected'     => 'rejected',
-            'Under Review' => 'under_review',
-            default        => 'pending',
-        };
+        return Applicant::admissionStatusFor($status);
     }
 
     private function forbidden(string $message): JsonResponse
